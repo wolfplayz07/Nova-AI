@@ -6,21 +6,29 @@ Personal assistant. Local first. No App Store. No Siri. No API yet.
 
 **[Launch Nova](https://htmlpreview.github.io/?https://github.com/wolfplayz07/Nova-AI/blob/main/web/index.html)**
 
-Open that in Safari on your iPhone, then Share → Add to Home Screen if you want an icon.
+Safari on iPhone → Share → Add to Home Screen if you want an icon.
 
-Source files: [web/](https://github.com/wolfplayz07/Nova-AI/tree/main/web)
+## Careful on-phone training
 
-Try:
+This is a tiny CPU toy. It will not become ChatGPT. It will not use a phone GPU.
+
+Safeties:
+- 2 training steps, then a rest
+- auto-pause after 12 seconds
+- auto-pause if you leave the tab
+- auto-pause if battery is under 20% and unplugged
+- keep Nova on screen; if the phone is warm, say `pause train`
 
 ```
-remember my name is Kevin
-who am i
-what time is it
-what do you remember
+train
+pause train
+sample
+train status
+reset brain
 ```
 
-Chat and memories stay in the browser on this device.
+Weights stay in this phone's browser storage only.
 
-## Swift app (later / optional)
+## Memory file
 
-`NovaAI/` is the native iPhone project if you get a Mac. Not required to use Nova today.
+Shared notebook (public repo — no secrets): [data/memory.json](data/memory.json)
