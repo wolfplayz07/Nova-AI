@@ -1,12 +1,13 @@
-/* Nova v3 recurrent trainer. Bigger phrase brain. Still not an LLM. */
+/* Nova v4. Typed-array RNN. Learns seed lines + your corrections only. */
 (function (global) {
   var H = 32;
-  var SEQ = 24;
-  var LR = 0.03;
-  var STEPS_PER_SEC = 40;
+  var SEQ = 20;
+  var LR = 0.04;
+  var STEPS_PER_SEC = 50;
   var TICK_MS = 40;
-  var PERSIST_MS = 2000;
-  var STORE = "nova-tiny-brain-v3";
+  var PERSIST_MS = 3000;
+  var STORE = "nova-tiny-brain-v4";
+  var LESSONS = "nova-lessons-v4";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
@@ -23,10 +24,8 @@
     "you: can you do math\nnova: two plus two is four.\n" +
     "you: what is two plus two\nnova: four.\n" +
     "you: what is one plus one\nnova: two.\n" +
-    "you: what else have you learned\nnova: hello, math, and my name.\n" +
     "you: what is your name\nnova: nova.\n" +
-    "you: goodbye\nnova: bye.\n" +
-    "you: what time is it\nnova: i cannot see the clock yet.\n";
+    "you: goodbye\nnova: bye.\n";
 
   function fixedVocab() {
     var stoi = {};
@@ -35,15 +34,10 @@
     return { itos: ALPHA.split(""), stoi: stoi, n: ALPHA.length };
   }
 
-  function zeros(n) {
-    var a = new Array(n);
-    var i;
-    for (i = 0; i < n; i++) a[i] = 0;
-    return a;
-  }
+  function f32(n) { return new Float32Array(n); }
 
   function randn(n) {
-    var a = new Array(n);
+    var a = f32(n);
     var i;
     for (i = 0; i < n; i++) a[i] = (Math.random() - 0.5) * 0.15;
     return a;
@@ -54,28 +48,33 @@
       Wxh: randn(H * v),
       Whh: randn(H * H),
       Why: randn(v * H),
-      bh: zeros(H),
-      by: zeros(v),
+      bh: f32(H),
+      by: f32(v),
       steps: 0,
       loss: null,
-      kind: "rnn-v3"
+      kind: "rnn-v4"
     };
+  }
+
+  function asF32(a, n) {
+    if (a && a.length === n) return a instanceof Float32Array ? a : Float32Array.from(a);
+    return f32(n);
   }
 
   function tanh(x) { return Math.tanh(x); }
 
-  function softmax(arr, temp) {
+  function softmaxInto(arr, out, temp) {
     if (!temp || temp <= 0) temp = 1;
     var m = -Infinity;
     var i;
     for (i = 0; i < arr.length; i++) if (arr[i] > m) m = arr[i];
     var s = 0;
-    var out = new Array(arr.length);
     for (i = 0; i < arr.length; i++) {
       out[i] = Math.exp(Math.min((arr[i] - m) / temp, 20));
       s += out[i];
     }
-    for (i = 0; i < arr.length; i++) out[i] /= s || 1;
+    var inv = 1 / (s || 1);
+    for (i = 0; i < arr.length; i++) out[i] *= inv;
     return out;
   }
 
@@ -94,8 +93,25 @@
     model: null,
     vocab: fixedVocab(),
     text: BASE_TEXT,
+    lessons: [],
     onUpdate: null
   };
+
+  var work = {
+    h: f32(H),
+    logits: null,
+    p: null,
+    dlog: null
+  };
+
+  function ensureWork() {
+    var v = trainer.vocab.n;
+    if (!work.logits || work.logits.length !== v) {
+      work.logits = f32(v);
+      work.p = f32(v);
+      work.dlog = f32(v);
+    }
+  }
 
   function loadSaved() {
     try {
@@ -107,11 +123,34 @@
     }
   }
 
+  function loadLessons() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(LESSONS) || "[]");
+      return raw && raw.length ? raw : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveLessons() {
+    try { localStorage.setItem(LESSONS, JSON.stringify(trainer.lessons.slice(-80))); } catch (e) {}
+  }
+
   function persist() {
     if (!trainer.model) return;
     try {
+      var m = trainer.model;
       localStorage.setItem(STORE, JSON.stringify({
-        model: trainer.model,
+        model: {
+          Wxh: Array.prototype.slice.call(m.Wxh),
+          Whh: Array.prototype.slice.call(m.Whh),
+          Why: Array.prototype.slice.call(m.Why),
+          bh: Array.prototype.slice.call(m.bh),
+          by: Array.prototype.slice.call(m.by),
+          steps: m.steps,
+          loss: m.loss,
+          kind: "rnn-v4"
+        },
         vocab: trainer.vocab,
         H: H
       }));
@@ -121,15 +160,25 @@
 
   function restore() {
     trainer.vocab = fixedVocab();
+    var v = trainer.vocab.n;
     var saved = loadSaved();
-    var savedOk = saved && saved.model && saved.model.kind === "rnn-v3" && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
-    var savedSteps = savedOk && typeof saved.model.steps === "number" ? saved.model.steps : -1;
-    var liveSteps = trainer.model && typeof trainer.model.steps === "number" ? trainer.model.steps : -1;
-    if (savedOk && savedSteps >= liveSteps) {
-      trainer.model = saved.model;
+    var savedOk = saved && saved.model && saved.model.kind === "rnn-v4" && saved.model.Wxh && saved.model.Wxh.length === H * v;
+    if (savedOk) {
+      trainer.model = {
+        Wxh: asF32(saved.model.Wxh, H * v),
+        Whh: asF32(saved.model.Whh, H * H),
+        Why: asF32(saved.model.Why, v * H),
+        bh: asF32(saved.model.bh, H),
+        by: asF32(saved.model.by, v),
+        steps: saved.model.steps || 0,
+        loss: saved.model.loss,
+        kind: "rnn-v4"
+      };
     } else if (!trainer.model) {
-      trainer.model = savedOk ? saved.model : newModel(trainer.vocab.n);
+      trainer.model = newModel(v);
     }
+    trainer.lessons = loadLessons();
+    ensureWork();
   }
 
   function sanitize(s) {
@@ -143,13 +192,22 @@
     return out;
   }
 
+  function pairText(user, nova) {
+    return "you: " + sanitize(user) + "\nnova: " + sanitize(nova) + "\n";
+  }
+
   function corpus() {
     var extra = "";
+    var i;
+    for (i = 0; i < trainer.lessons.length; i++) {
+      extra += pairText(trainer.lessons[i].user, trainer.lessons[i].nova);
+      extra += pairText(trainer.lessons[i].user, trainer.lessons[i].nova);
+    }
     try {
       var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
       var k;
       if (st.memories) {
-        for (k in st.memories) extra += "you: what is " + sanitize(k) + "\nnova: " + sanitize(st.memories[k]) + ".\n";
+        for (k in st.memories) extra += pairText("what is " + k, st.memories[k]);
       }
     } catch (e) {}
     return sanitize(BASE_TEXT + BASE_TEXT + extra);
@@ -160,8 +218,7 @@
     trainer.text = corpus();
   }
 
-  function forwardChar(m, v, x, prev) {
-    var h = zeros(H);
+  function forwardChar(m, v, x, prev, h) {
     var i, j;
     for (i = 0; i < H; i++) {
       var z = m.bh[i] + m.Wxh[i * v + x];
@@ -176,55 +233,59 @@
     var v = trainer.vocab.n;
     var text = trainer.text;
     if (!m || text.length < SEQ + 2) return;
+    ensureWork();
     var pos = Math.floor(Math.random() * (text.length - SEQ - 1));
-    var xs = [];
-    var ys = [];
+    var xs = new Array(SEQ);
+    var ys = new Array(SEQ);
     var t, i, j, k;
     for (t = 0; t < SEQ; t++) {
       var cx = trainer.vocab.stoi[text.charAt(pos + t)];
       var cy = trainer.vocab.stoi[text.charAt(pos + t + 1)];
       if (cx == null || cy == null) return;
-      xs.push(cx);
-      ys.push(cy);
+      xs[t] = cx;
+      ys[t] = cy;
     }
-    var hs = [zeros(H)];
-    var pList = [];
+    var hs = new Array(SEQ + 1);
+    hs[0] = f32(H);
+    var pList = new Array(SEQ);
     for (t = 0; t < SEQ; t++) {
-      var h = forwardChar(m, v, xs[t], hs[t]);
-      hs.push(h);
-      var logits = zeros(v);
+      hs[t + 1] = f32(H);
+      forwardChar(m, v, xs[t], hs[t], hs[t + 1]);
+      var logits = f32(v);
+      var h = hs[t + 1];
       for (i = 0; i < v; i++) {
         var z = m.by[i];
         for (j = 0; j < H; j++) z += m.Why[i * H + j] * h[j];
         logits[i] = z;
       }
-      pList.push(softmax(logits, 1));
+      pList[t] = f32(v);
+      softmaxInto(logits, pList[t], 1);
     }
     var loss = 0;
     for (t = 0; t < SEQ; t++) loss += -Math.log(Math.max(pList[t][ys[t]], 1e-8));
     loss /= SEQ;
 
-    var dWxh = zeros(H * v);
-    var dWhh = zeros(H * H);
-    var dWhy = zeros(v * H);
-    var dbh = zeros(H);
-    var dby = zeros(v);
-    var dhNext = zeros(H);
+    var dWxh = f32(H * v);
+    var dWhh = f32(H * H);
+    var dWhy = f32(v * H);
+    var dbh = f32(H);
+    var dby = f32(v);
+    var dhNext = f32(H);
 
     for (t = SEQ - 1; t >= 0; t--) {
       var p = pList[t];
       var h = hs[t + 1];
       var prev = hs[t];
-      var dlog = p.slice();
-      dlog[ys[t]] -= 1;
+      for (i = 0; i < v; i++) work.dlog[i] = p[i];
+      work.dlog[ys[t]] -= 1;
       for (i = 0; i < v; i++) {
-        dby[i] += dlog[i];
-        for (j = 0; j < H; j++) dWhy[i * H + j] += dlog[i] * h[j];
+        dby[i] += work.dlog[i];
+        for (j = 0; j < H; j++) dWhy[i * H + j] += work.dlog[i] * h[j];
       }
-      var dh = zeros(H);
+      var dh = f32(H);
       for (j = 0; j < H; j++) {
         var g = dhNext[j];
-        for (i = 0; i < v; i++) g += m.Why[i * H + j] * dlog[i];
+        for (i = 0; i < v; i++) g += m.Why[i * H + j] * work.dlog[i];
         dh[j] = g * (1 - h[j] * h[j]);
       }
       for (j = 0; j < H; j++) {
@@ -232,7 +293,6 @@
         dWxh[j * v + xs[t]] += dh[j];
         for (k = 0; k < H; k++) dWhh[j * H + k] += dh[j] * prev[k];
       }
-      dhNext = zeros(H);
       for (k = 0; k < H; k++) {
         var s = 0;
         for (j = 0; j < H; j++) s += m.Whh[j * H + k] * dh[j];
@@ -242,7 +302,8 @@
 
     function apply(arr, grad) {
       var i;
-      for (i = 0; i < arr.length; i++) arr[i] -= LR * clip(grad[i] / SEQ);
+      var scale = LR / SEQ;
+      for (i = 0; i < arr.length; i++) arr[i] -= scale * clip(grad[i]);
     }
     apply(m.Wxh, dWxh);
     apply(m.Whh, dWhh);
@@ -251,6 +312,25 @@
     apply(m.by, dby);
     m.steps += 1;
     m.loss = loss;
+  }
+
+  function drill(n) {
+    trainer.text = corpus();
+    var i;
+    for (i = 0; i < n; i++) stepOnce();
+    persist();
+    emit();
+  }
+
+  function addLesson(user, nova) {
+    user = sanitize(user);
+    nova = sanitize(nova);
+    if (!user || !nova) return false;
+    trainer.lessons.push({ user: user, nova: nova });
+    saveLessons();
+    prepare();
+    drill(30);
+    return true;
   }
 
   function emit() {
@@ -270,7 +350,8 @@
       running: trainer.running,
       steps: m ? m.steps : 0,
       loss: m && m.loss != null ? m.loss : null,
-      rate: measuredRate()
+      rate: measuredRate(),
+      lessons: trainer.lessons.length
     };
   }
 
@@ -293,7 +374,7 @@
   }
 
   function start() {
-    if (trainer.running) return "Already training. Same brain as every chat on this icon.";
+    if (trainer.running) return "Already training.";
     prepare();
     trainer.running = true;
     trainer.startedAt = Date.now();
@@ -301,7 +382,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training v3 (32-unit) at up to 40 steps/sec. New brain. Keep Nova on screen.";
+    return "Training v4. Learns the seed list plus your fix / when I say lessons. Keep Nova on screen.";
   }
 
   function pause(reason) {
@@ -310,7 +391,7 @@
     trainer.timer = null;
     persist();
     emit();
-    return reason || "Paused. Shared v3 brain saved on this icon.";
+    return reason || "Paused. v4 brain saved.";
   }
 
   function toggle() {
@@ -340,31 +421,33 @@
     var m = trainer.model;
     var v = trainer.vocab;
     if (!m || !v) return "";
+    ensureWork();
     seed = sanitize(seed);
     if (!seed) seed = "you: hello\nnova: ";
-    var prev = zeros(H);
+    var prev = f32(H);
+    var h = f32(H);
     var last = 0;
-    var i, t;
+    var i, t, j;
     for (t = 0; t < seed.length; t++) {
       last = v.stoi[seed.charAt(t)];
       if (last == null) last = 0;
-      prev = forwardChar(m, v.n, last, prev);
+      forwardChar(m, v.n, last, prev, h);
+      for (i = 0; i < H; i++) prev[i] = h[i];
     }
     var out = "";
     for (t = 0; t < (maxLen || 40); t++) {
-      var logits = zeros(v.n);
       for (i = 0; i < v.n; i++) {
         var z = m.by[i];
-        var j;
         for (j = 0; j < H; j++) z += m.Why[i * H + j] * prev[j];
-        logits[i] = z;
+        work.logits[i] = z;
       }
-      var p = softmax(logits, temp == null ? 0.6 : temp);
-      var idx = temp === 0 ? argmax(p) : pick(p);
+      softmaxInto(work.logits, work.p, temp == null ? 0.6 : (temp || 1));
+      var idx = temp === 0 ? argmax(work.p) : pick(work.p);
       var ch = v.itos[idx];
       if (ch === "\n") break;
       out += ch;
-      prev = forwardChar(m, v.n, idx, prev);
+      forwardChar(m, v.n, idx, prev, h);
+      for (i = 0; i < H; i++) prev[i] = h[i];
     }
     return out.trim();
   }
@@ -376,8 +459,37 @@
   function talk(userText) {
     var seed = "you: " + sanitize(userText) + "\nnova: ";
     var out = generate(seed, 40, 0);
-    if (!out) return "still learning. train me a while, then try again.";
+    if (!out) return "still learning. train me, or type: when I say hi say hey";
     return out;
+  }
+
+  function handleUser(text, lastUser) {
+    if (!trainer.model) prepare();
+    var raw = String(text || "").trim();
+    var lower = raw.toLowerCase();
+    var m;
+
+    m = lower.match(/^fix[:\s]+(.+)$/);
+    if (m && lastUser) {
+      addLesson(lastUser, m[1]);
+      return "learned. when you say \"" + sanitize(lastUser) + "\" I practice \"" + sanitize(m[1]) + "\".";
+    }
+    m = lower.match(/^no[,:]\s*(.+)$/);
+    if (m && lastUser) {
+      addLesson(lastUser, m[1]);
+      return "got it. corrected to \"" + sanitize(m[1]) + "\".";
+    }
+    m = lower.match(/^when i say (.+?) say (.+)$/);
+    if (m) {
+      addLesson(m[1], m[2]);
+      return "lesson saved: \"" + sanitize(m[1]) + "\" -> \"" + sanitize(m[2]) + "\".";
+    }
+    m = lower.match(/^say (.+?) when i say (.+)$/);
+    if (m) {
+      addLesson(m[2], m[1]);
+      return "lesson saved: \"" + sanitize(m[2]) + "\" -> \"" + sanitize(m[1]) + "\".";
+    }
+    return null;
   }
 
   function reset() {
@@ -390,26 +502,12 @@
     trainer.model = newModel(trainer.vocab.n);
     persist();
     emit();
-    return "Shared v3 brain wiped because you typed reset brain confirm.";
+    return "v4 brain wiped. Lessons were kept.";
   }
 
   function exportBrain() {
     persist();
-    var payload = {
-      id: "nova-export-v3",
-      note: "Shared icon brain. No personal memory.",
-      steps: trainer.model ? trainer.model.steps : 0,
-      model: trainer.model,
-      vocab: trainer.vocab
-    };
-    try {
-      var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "nova-brain-v3.json";
-      a.click();
-    } catch (e) {}
-    return "Exported the shared v3 brain (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
+    return "Exported v4 (" + (trainer.model ? trainer.model.steps : 0) + " steps, " + trainer.lessons.length + " lessons).";
   }
 
   document.addEventListener("visibilitychange", function () {
@@ -424,6 +522,7 @@
     toggle: toggle,
     sample: sample,
     talk: talk,
+    handleUser: handleUser,
     reset: reset,
     resetConfirm: resetConfirm,
     status: status,
