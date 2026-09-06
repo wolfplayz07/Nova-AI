@@ -3,7 +3,8 @@
   var H = 16;
   var LR = 0.03;
   var STEPS_PER_SEC = 10;
-  var TICK_MS = 100;
+  var TICK_MS = 50;
+  var PERSIST_MS = 2000;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -67,6 +68,7 @@
     timer: null,
     startedAt: 0,
     sessionSteps: 0,
+    lastPersist: 0,
     model: null,
     vocab: fixedVocab(),
     text: BASE_TEXT,
@@ -91,6 +93,7 @@
         vocab: trainer.vocab,
         H: H
       }));
+      trainer.lastPersist = Date.now();
     } catch (e) {}
   }
 
@@ -170,6 +173,12 @@
     if (trainer.onUpdate) trainer.onUpdate(status());
   }
 
+  function measuredRate() {
+    var sec = (Date.now() - trainer.startedAt) / 1000;
+    if (!trainer.running || sec < 0.5) return STEPS_PER_SEC;
+    return trainer.sessionSteps / sec;
+  }
+
   function status() {
     if (!trainer.model) restore();
     var m = trainer.model;
@@ -177,7 +186,7 @@
       running: trainer.running,
       steps: m ? m.steps : 0,
       loss: m && m.loss != null ? m.loss : null,
-      rate: STEPS_PER_SEC
+      rate: measuredRate()
     };
   }
 
@@ -187,15 +196,14 @@
       pause("paused because the app went to the background");
       return;
     }
-    var elapsed = Date.now() - trainer.startedAt;
-    var target = Math.floor(elapsed * STEPS_PER_SEC / 1000);
-    var behind = target - trainer.sessionSteps;
-    var n = behind < 1 ? 1 : behind;
-    if (n > 20) n = 20;
+    var now = Date.now();
+    var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000);
+    var need = due - trainer.sessionSteps;
+    if (need > 40) need = 40;
     var i;
-    for (i = 0; i < n; i++) stepOnce();
-    trainer.sessionSteps += n;
-    persist();
+    for (i = 0; i < need; i++) stepOnce();
+    if (need > 0) trainer.sessionSteps += need;
+    if (now - trainer.lastPersist >= PERSIST_MS) persist();
     emit();
     trainer.timer = setTimeout(burst, TICK_MS);
   }
@@ -206,6 +214,7 @@
     trainer.running = true;
     trainer.startedAt = Date.now();
     trainer.sessionSteps = 0;
+    trainer.lastPersist = 0;
     persist();
     burst();
     return "Training at 10 steps/sec until you turn it off. Keep Nova on screen.";
