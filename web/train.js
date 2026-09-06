@@ -3,7 +3,7 @@
   var H = 16;
   var SEQ = 12;
   var LR = 0.03;
-  var STEPS_PER_SEC = 10;
+  var STEPS_PER_SEC = 20;
   var TICK_MS = 50;
   var PERSIST_MS = 2000;
   var STORE = "nova-tiny-brain-v2";
@@ -290,7 +290,7 @@
     var now = Date.now();
     var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000);
     var need = due - trainer.sessionSteps;
-    if (need > 20) need = 20;
+    if (need > 40) need = 40;
     var i;
     for (i = 0; i < need; i++) stepOnce();
     if (need > 0) trainer.sessionSteps += need;
@@ -308,7 +308,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training the v2 reply brain at 10 steps/sec. Keep Nova on screen.";
+    return "Training the v2 reply brain at 20 steps/sec. Keep Nova on screen.";
   }
 
   function pause(reason) {
