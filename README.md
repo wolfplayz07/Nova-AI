@@ -1,36 +1,41 @@
 # Nova-AI
 
-Nova is an iPhone-first personal AI agent built around local reasoning, persistent memory, project work, and optional online tools.
+Nova is a personal iPhone assistant. **Local first.** No API until you choose to add one.
 
-## Current build: v0.1 foundation
+## Mode right now
 
-- Native SwiftUI application shell
-- Persistent local conversations with SwiftData
-- Persistent memory data model
-- Pluggable local-model engine
-- Nova agent controller
-- Working chat UI and message pipeline
-- iOS 17+ target
+On-device only:
 
-The current `BootstrapModelEngine` lets the app and persistence layer work before the real model is installed. The next major milestone is replacing it with MLX-backed on-device inference.
+- Chat UI
+- Conversations saved on the phone (SwiftData)
+- Local memory: `remember my name is …`
+- Simple local answers (time, date, who you are, what Nova is)
+- No network calls
 
-## Planned next
+This is not Grok or ChatGPT yet. It is a working shell with a local brain you can grow.
 
-1. Add MLX Swift / MLXLLM dependency.
-2. Add downloadable quantized local model support.
-3. Stream tokens into the chat UI.
-4. Add memory retrieval and project workspaces.
-5. Add Nova's web research tool and tool-decision loop.
-6. Add approval gates for consequential external actions.
-7. Add voice, camera, files, GitHub, and other tools.
+## Try it
 
-## Generate the Xcode project
+```
+remember my name is Kevin
+who am i
+what time is it
+what do you remember
+```
 
-The repo uses `project.yml` so the Xcode project can be generated with XcodeGen in a Mac build environment.
+## Later (not now)
+
+1. Real on-device model via MLX (needs a Mac + Xcode).
+2. Optional API (Groq free tier or paid Grok) behind a switch.
+3. Voice inside the app (not Siri).
+4. Tools with approval.
+
+## Build on a Mac
 
 ```bash
+brew install xcodegen
 xcodegen generate
 open NovaAI.xcodeproj
 ```
 
-Target: iOS 17+
+Target: iOS 17+, iPhone. Sideload to your own device from Xcode. No App Store.
