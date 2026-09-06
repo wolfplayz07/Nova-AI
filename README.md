@@ -1,20 +1,18 @@
-# Nova-AI
+# Nova
 
-Nova is a personal iPhone assistant. **Local first.** No API until you choose to add one.
+Personal assistant. Local first. No App Store. No Siri. No API yet.
 
-## Mode right now
+## Use it on your iPhone (easiest)
 
-On-device only:
+The working version is the web app in `/web`.
 
-- Chat UI
-- Conversations saved on the phone (SwiftData)
-- Local memory: `remember my name is …`
-- Simple local answers (time, date, who you are, what Nova is)
-- No network calls
+1. On your iPhone, open the `web/index.html` file from this repo once it is on GitHub Pages, or open the files from the `web` folder in Safari.
+2. Tap **Share** → **Add to Home Screen** → Add.
+3. Open **Nova** from your home screen like any app.
 
-This is not Grok or ChatGPT yet. It is a working shell with a local brain you can grow.
+To turn on GitHub Pages: repo **Settings → Pages → Deploy from a branch → main → /docs or root**. Until Pages is on, you can still open the raw files after downloading them.
 
-## Try it
+Try:
 
 ```
 remember my name is Kevin
@@ -23,19 +21,10 @@ what time is it
 what do you remember
 ```
 
-## Later (not now)
+Chat and memories stay in the phone browser. Nothing is sent to an API.
 
-1. Real on-device model via MLX (needs a Mac + Xcode).
-2. Optional API (Groq free tier or paid Grok) behind a switch.
-3. Voice inside the app (not Siri).
-4. Tools with approval.
+Mic button uses the in-app speech box, not Siri.
 
-## Build on a Mac
+## Swift app (later / optional)
 
-```bash
-brew install xcodegen
-xcodegen generate
-open NovaAI.xcodeproj
-```
-
-Target: iOS 17+, iPhone. Sideload to your own device from Xcode. No App Store.
+`NovaAI/` is the native iPhone project if you get a Mac. Same local idea. Not required to use Nova today.
