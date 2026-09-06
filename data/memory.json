@@ -1,0 +1,14 @@
+{
+  "updated": "2026-09-06",
+  "facts": [
+    {
+      "key": "project",
+      "value": "Nova is a personal local-first assistant",
+      "source": "repo"
+    }
+  ],
+  "notes": [
+    "This file is Nova's shared memory. It is not a full database.",
+    "Do not put passwords, bank info, or secrets here. The repo is public."
+  ]
+}
