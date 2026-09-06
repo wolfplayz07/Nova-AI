@@ -1,18 +1,24 @@
-/* Nova tiny trainer. One brain per origin/icon. Never wiped by new chat. */
+/* Nova v2 recurrent trainer. Replies to the last user line. */
 (function (global) {
   var H = 16;
+  var SEQ = 12;
   var LR = 0.03;
   var STEPS_PER_SEC = 10;
   var TICK_MS = 50;
   var PERSIST_MS = 2000;
-  var STORE = "nova-tiny-brain-v1";
+  var STORE = "nova-tiny-brain-v2";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
-    "hello i am nova. i live on this phone. " +
-    "two plus two is four. one plus one is two. " +
-    "if the light is red, stop. if the light is green, go. " +
-    "remember facts. be careful. think one small step. ";
+    "you: hello\nnova: hey. i am nova. i live on this phone.\n" +
+    "you: who are you\nnova: i am nova. a small brain on this device.\n" +
+    "you: how are you\nnova: i am here. still learning.\n" +
+    "you: what is two plus two\nnova: four.\n" +
+    "you: what is one plus one\nnova: two.\n" +
+    "you: if the light is red\nnova: stop.\n" +
+    "you: if the light is green\nnova: go.\n" +
+    "you: remember facts\nnova: i will remember what you save.\n" +
+    "you: thanks\nnova: you are welcome.\n";
 
   function fixedVocab() {
     var stoi = {};
@@ -43,7 +49,8 @@
       bh: zeros(H),
       by: zeros(v),
       steps: 0,
-      loss: null
+      loss: null,
+      kind: "rnn-v2"
     };
   }
 
@@ -61,6 +68,12 @@
     }
     for (i = 0; i < arr.length; i++) out[i] /= s || 1;
     return out;
+  }
+
+  function clip(x) {
+    if (x > 5) return 5;
+    if (x < -5) return -5;
+    return x;
   }
 
   var trainer = {
@@ -100,7 +113,7 @@
   function restore() {
     trainer.vocab = fixedVocab();
     var saved = loadSaved();
-    var savedOk = saved && saved.model && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
+    var savedOk = saved && saved.model && saved.model.kind === "rnn-v2" && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
     var savedSteps = savedOk && typeof saved.model.steps === "number" ? saved.model.steps : -1;
     var liveSteps = trainer.model && typeof trainer.model.steps === "number" ? trainer.model.steps : -1;
     if (savedOk && savedSteps >= liveSteps) {
@@ -110,16 +123,41 @@
     }
   }
 
+  function sanitize(s) {
+    var out = "";
+    var i, ch;
+    s = String(s || "").toLowerCase();
+    for (i = 0; i < s.length; i++) {
+      ch = s.charAt(i);
+      if (trainer.vocab.stoi[ch] != null) out += ch;
+    }
+    return out;
+  }
+
   function corpus() {
     var extra = "";
     try {
       var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
       var k;
       if (st.memories) {
-        for (k in st.memories) extra += " " + k + " is " + st.memories[k] + ".";
+        for (k in st.memories) extra += "you: what is " + k + "\nnova: " + st.memories[k] + ".\n";
+      }
+      if (st.conversations) {
+        st.conversations.forEach(function (c) {
+          var msgs = (c.messages || []).slice(-8);
+          var i;
+          for (i = 0; i < msgs.length - 1; i++) {
+            if (msgs[i].role === "user" && msgs[i + 1].role === "assistant") {
+              var a = sanitize(msgs[i + 1].content);
+              if (a.indexOf("tiny brain sample") === 0) continue;
+              if (a.indexOf("training at ") === 0) continue;
+              extra += "you: " + sanitize(msgs[i].content) + "\nnova: " + a + "\n";
+            }
+          }
+        });
       }
     } catch (e) {}
-    return (BASE_TEXT + extra).toLowerCase();
+    return sanitize(BASE_TEXT + extra);
   }
 
   function prepare() {
@@ -127,44 +165,97 @@
     trainer.text = corpus();
   }
 
+  function forwardChar(m, v, x, prev) {
+    var h = zeros(H);
+    var i, j;
+    for (i = 0; i < H; i++) {
+      var z = m.bh[i] + m.Wxh[i * v + x];
+      for (j = 0; j < H; j++) z += m.Whh[i * H + j] * prev[j];
+      h[i] = tanh(z);
+    }
+    return h;
+  }
+
   function stepOnce() {
     var m = trainer.model;
     var v = trainer.vocab.n;
     var text = trainer.text;
-    if (!m || text.length < 8) return;
-    var pos = Math.floor(Math.random() * (text.length - 2));
-    var ch = text.charAt(pos);
-    var target = text.charAt(pos + 1);
-    var x = trainer.vocab.stoi[ch];
-    var y = trainer.vocab.stoi[target];
-    if (x == null || y == null) return;
-    var h = zeros(H);
-    var i, j;
-    for (i = 0; i < H; i++) h[i] = tanh(m.bh[i] + m.Wxh[i * v + x]);
-    var logits = zeros(v);
-    for (i = 0; i < v; i++) {
-      var z = m.by[i];
-      for (j = 0; j < H; j++) z += m.Why[i * H + j] * h[j];
-      logits[i] = z;
+    if (!m || text.length < SEQ + 2) return;
+    var pos = Math.floor(Math.random() * (text.length - SEQ - 1));
+    var xs = [];
+    var ys = [];
+    var t, i, j, k;
+    for (t = 0; t < SEQ; t++) {
+      var cx = trainer.vocab.stoi[text.charAt(pos + t)];
+      var cy = trainer.vocab.stoi[text.charAt(pos + t + 1)];
+      if (cx == null || cy == null) return;
+      xs.push(cx);
+      ys.push(cy);
     }
-    var p = softmax(logits);
-    var loss = -Math.log(Math.max(p[y], 1e-8));
-    var dlog = p.slice();
-    dlog[y] -= 1;
-    for (i = 0; i < v; i++) {
-      m.by[i] -= LR * dlog[i];
-      for (j = 0; j < H; j++) m.Why[i * H + j] -= LR * dlog[i] * h[j];
+    var hs = [zeros(H)];
+    var logitsList = [];
+    var pList = [];
+    for (t = 0; t < SEQ; t++) {
+      var h = forwardChar(m, v, xs[t], hs[t]);
+      hs.push(h);
+      var logits = zeros(v);
+      for (i = 0; i < v; i++) {
+        var z = m.by[i];
+        for (j = 0; j < H; j++) z += m.Why[i * H + j] * h[j];
+        logits[i] = z;
+      }
+      logitsList.push(logits);
+      pList.push(softmax(logits));
     }
-    var dh = zeros(H);
-    for (j = 0; j < H; j++) {
-      var g = 0;
-      for (i = 0; i < v; i++) g += m.Why[i * H + j] * dlog[i];
-      dh[j] = g * (1 - h[j] * h[j]);
+    var loss = 0;
+    for (t = 0; t < SEQ; t++) loss += -Math.log(Math.max(pList[t][ys[t]], 1e-8));
+    loss /= SEQ;
+
+    var dWxh = zeros(H * v);
+    var dWhh = zeros(H * H);
+    var dWhy = zeros(v * H);
+    var dbh = zeros(H);
+    var dby = zeros(v);
+    var dhNext = zeros(H);
+
+    for (t = SEQ - 1; t >= 0; t--) {
+      var p = pList[t];
+      var h = hs[t + 1];
+      var prev = hs[t];
+      var dlog = p.slice();
+      dlog[ys[t]] -= 1;
+      for (i = 0; i < v; i++) {
+        dby[i] += dlog[i];
+        for (j = 0; j < H; j++) dWhy[i * H + j] += dlog[i] * h[j];
+      }
+      var dh = zeros(H);
+      for (j = 0; j < H; j++) {
+        var g = dhNext[j];
+        for (i = 0; i < v; i++) g += m.Why[i * H + j] * dlog[i];
+        dh[j] = g * (1 - h[j] * h[j]);
+      }
+      for (j = 0; j < H; j++) {
+        dbh[j] += dh[j];
+        dWxh[j * v + xs[t]] += dh[j];
+        for (k = 0; k < H; k++) dWhh[j * H + k] += dh[j] * prev[k];
+      }
+      dhNext = zeros(H);
+      for (k = 0; k < H; k++) {
+        var s = 0;
+        for (j = 0; j < H; j++) s += m.Whh[j * H + k] * dh[j];
+        dhNext[k] = s;
+      }
     }
-    for (j = 0; j < H; j++) {
-      m.bh[j] -= LR * dh[j];
-      m.Wxh[j * v + x] -= LR * dh[j];
+
+    function apply(arr, grad) {
+      var i;
+      for (i = 0; i < arr.length; i++) arr[i] -= LR * clip(grad[i] / SEQ);
     }
+    apply(m.Wxh, dWxh);
+    apply(m.Whh, dWhh);
+    apply(m.Why, dWhy);
+    apply(m.bh, dbh);
+    apply(m.by, dby);
     m.steps += 1;
     m.loss = loss;
   }
@@ -199,7 +290,7 @@
     var now = Date.now();
     var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000);
     var need = due - trainer.sessionSteps;
-    if (need > 40) need = 40;
+    if (need > 20) need = 20;
     var i;
     for (i = 0; i < need; i++) stepOnce();
     if (need > 0) trainer.sessionSteps += need;
@@ -217,7 +308,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training at 10 steps/sec until you turn it off. Keep Nova on screen.";
+    return "Training the v2 reply brain at 10 steps/sec. Keep Nova on screen.";
   }
 
   function pause(reason) {
@@ -233,36 +324,59 @@
     return trainer.running ? pause() : start();
   }
 
-  function sample(n) {
+  function pick(p) {
+    var r = Math.random();
+    var acc = 0;
+    var i;
+    for (i = 0; i < p.length; i++) {
+      acc += p[i];
+      if (r <= acc) return i;
+    }
+    return p.length - 1;
+  }
+
+  function generate(seed, maxLen) {
     if (!trainer.model) prepare();
     var m = trainer.model;
     var v = trainer.vocab;
-    if (!m || !v) return "(no brain yet)";
-    n = n || 40;
+    if (!m || !v) return "";
+    seed = sanitize(seed);
+    if (!seed) seed = "you: hello\nnova: ";
+    var prev = zeros(H);
     var last = v.stoi[" "] != null ? v.stoi[" "] : 0;
+    var i, t;
+    for (t = 0; t < seed.length; t++) {
+      last = v.stoi[seed.charAt(t)];
+      if (last == null) last = 0;
+      prev = forwardChar(m, v.n, last, prev);
+    }
     var out = "";
-    var t, i, j;
-    for (t = 0; t < n; t++) {
-      var h = zeros(H);
-      for (i = 0; i < H; i++) h[i] = tanh(m.bh[i] + m.Wxh[i * v.n + last]);
+    for (t = 0; t < (maxLen || 60); t++) {
       var logits = zeros(v.n);
       for (i = 0; i < v.n; i++) {
         var z = m.by[i];
-        for (j = 0; j < H; j++) z += m.Why[i * H + j] * h[j];
+        var j;
+        for (j = 0; j < H; j++) z += m.Why[i * H + j] * prev[j];
         logits[i] = z;
       }
-      var p = softmax(logits);
-      var r = Math.random();
-      var acc = 0;
-      var pick = 0;
-      for (i = 0; i < p.length; i++) {
-        acc += p[i];
-        if (r <= acc) { pick = i; break; }
-      }
-      out += v.itos[pick];
-      last = pick;
+      var idx = pick(softmax(logits));
+      var ch = v.itos[idx];
+      if (ch === "\n") break;
+      out += ch;
+      prev = forwardChar(m, v.n, idx, prev);
     }
     return out.trim();
+  }
+
+  function sample(n) {
+    return generate("nova: ", n || 40) || "(no brain yet)";
+  }
+
+  function talk(userText) {
+    var seed = "you: " + sanitize(userText) + "\nnova: ";
+    var out = generate(seed, 80);
+    if (!out) return "still learning. train me a while, then try again.";
+    return out;
   }
 
   function reset() {
@@ -275,13 +389,13 @@
     trainer.model = newModel(trainer.vocab.n);
     persist();
     emit();
-    return "Shared brain wiped because you typed reset brain confirm.";
+    return "Shared v2 brain wiped because you typed reset brain confirm.";
   }
 
   function exportBrain() {
     persist();
     var payload = {
-      id: "nova-export",
+      id: "nova-export-v2",
       note: "Shared icon brain. No personal memory.",
       steps: trainer.model ? trainer.model.steps : 0,
       model: trainer.model,
@@ -308,6 +422,7 @@
     pause: pause,
     toggle: toggle,
     sample: sample,
+    talk: talk,
     reset: reset,
     resetConfirm: resetConfirm,
     status: status,

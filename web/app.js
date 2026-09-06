@@ -109,7 +109,7 @@ function setStatus(st) {
     var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
     statusEl.textContent = "train " + st.steps + loss;
   } else if (st && st.steps) {
-    statusEl.textContent = "paused · " + st.steps + " steps";
+    statusEl.textContent = "paused \u00b7 " + st.steps + " steps";
   } else {
     statusEl.textContent = "offline brain";
   }
@@ -219,12 +219,12 @@ function chatRow(c) {
   };
   var move = document.createElement("button");
   move.className = "mini";
-  move.textContent = "📁";
+  move.textContent = "\ud83d\udcc1";
   move.title = "Move to folder";
   move.onclick = function (e) { e.stopPropagation(); moveChat(c); };
   var del = document.createElement("button");
   del.className = "mini danger";
-  del.textContent = "×";
+  del.textContent = "\u00d7";
   del.title = "Delete chat";
   del.onclick = function (e) { e.stopPropagation(); deleteChat(c.id); };
   wrap.appendChild(btn);
@@ -251,7 +251,7 @@ function renderSide() {
     head.className = "folder-head";
     var tog = document.createElement("button");
     tog.className = "folder-btn";
-    tog.textContent = (folder.open ? "▾ " : "▸ ") + folder.name;
+    tog.textContent = (folder.open ? "\u25be " : "\u25b8 ") + folder.name;
     tog.onclick = function () {
       folder.open = !folder.open;
       save();
@@ -259,7 +259,7 @@ function renderSide() {
     };
     var rm = document.createElement("button");
     rm.className = "mini";
-    rm.textContent = "×";
+    rm.textContent = "\u00d7";
     rm.onclick = function () { deleteFolder(folder.id); };
     head.appendChild(tog);
     head.appendChild(rm);
@@ -284,14 +284,14 @@ function renderSide() {
 
 function render() {
   var chat = currentChat();
-  if (chatTitle) chatTitle.textContent = chat.title || "Local · on this device";
+  if (chatTitle) chatTitle.textContent = chat.title || "Local \u00b7 on this device";
   renderSide();
   setStatus();
   feed.innerHTML = "";
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova</h2><p>New chat. Training and memories stay.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova</h2><p>Talk to me. Training teaches the shared brain.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-act]").forEach(function (btn) {
       btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
@@ -351,11 +351,6 @@ function reply(text) {
     return "Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss;
   }
   var memories = memoryList();
-  var name = state.memories && state.memories.name;
-  if (["hi", "hey", "hello", "yo", "sup"].indexOf(lower) !== -1) {
-    return name ? "Hey " + name + "." : "Hey. I'm Nova.";
-  }
-  if (lower.indexOf("who are you") !== -1) return "I'm Nova. I run on this device.";
   if (lower.indexOf("what do you remember") !== -1 || lower === "memory") {
     if (!memories.length) return "Local memory is empty.";
     return memories.map(function (m) { return "- " + m.key + ": " + m.value; }).join("\n");
@@ -369,6 +364,7 @@ function reply(text) {
   if (lower.indexOf("what time") !== -1 || lower === "time") {
     return "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".";
   }
+  if (T && T.talk) return T.talk(text);
   return "I heard you. You said: \"" + text + "\"";
 }
 
