@@ -2,15 +2,13 @@
 
 Personal assistant. Local first. No App Store. No Siri. No API yet.
 
-## Use it on your iPhone (easiest)
+## Open Nova
 
-The working version is the web app in `/web`.
+**[Launch Nova](https://htmlpreview.github.io/?https://github.com/wolfplayz07/Nova-AI/blob/main/web/index.html)**
 
-1. On your iPhone, open the `web/index.html` file from this repo once it is on GitHub Pages, or open the files from the `web` folder in Safari.
-2. Tap **Share** → **Add to Home Screen** → Add.
-3. Open **Nova** from your home screen like any app.
+Open that in Safari on your iPhone, then Share → Add to Home Screen if you want an icon.
 
-To turn on GitHub Pages: repo **Settings → Pages → Deploy from a branch → main → /docs or root**. Until Pages is on, you can still open the raw files after downloading them.
+Source files: [web/](https://github.com/wolfplayz07/Nova-AI/tree/main/web)
 
 Try:
 
@@ -21,10 +19,8 @@ what time is it
 what do you remember
 ```
 
-Chat and memories stay in the phone browser. Nothing is sent to an API.
-
-Mic button uses the in-app speech box, not Siri.
+Chat and memories stay in the browser on this device.
 
 ## Swift app (later / optional)
 
-`NovaAI/` is the native iPhone project if you get a Mac. Same local idea. Not required to use Nova today.
+`NovaAI/` is the native iPhone project if you get a Mac. Not required to use Nova today.
