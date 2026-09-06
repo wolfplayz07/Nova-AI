@@ -11,15 +11,19 @@
 
   var BASE_TEXT =
     "you: hello\nnova: hey.\n" +
-    "you: hello\nnova: hey. i am nova.\n" +
     "you: hi\nnova: hey.\n" +
     "you: hey\nnova: hey.\n" +
-    "you: hello there\nnova: hey.\n" +
     "you: who are you\nnova: i am nova.\n" +
     "you: how are you\nnova: i am here.\n" +
+    "you: how old are you\nnova: i am new.\n" +
+    "you: why\nnova: i am still learning.\n" +
+    "you: ok\nnova: ok.\n" +
+    "you: thanks\nnova: you are welcome.\n" +
+    "you: no thank you\nnova: ok.\n" +
+    "you: can you do math\nnova: two plus two is four.\n" +
     "you: what is two plus two\nnova: four.\n" +
     "you: what is one plus one\nnova: two.\n" +
-    "you: thanks\nnova: you are welcome.\n";
+    "you: what else have you learned\nnova: hello, math, and my name.\n";
 
   function fixedVocab() {
     var stoi = {};
@@ -369,7 +373,7 @@
 
   function talk(userText) {
     var seed = "you: " + sanitize(userText) + "\nnova: ";
-    var out = generate(seed, 24, 0);
+    var out = generate(seed, 32, 0);
     if (!out) return "still learning. train me a while, then try again.";
     return out;
   }
