@@ -1,14 +1,13 @@
-/* Nova tiny trainer.
-   CPU only. Short bursts. Auto-pause. Will not become ChatGPT.
-   Safe-ish for a phone you still want to use.
-*/
+/* Nova tiny trainer. One brain per origin/icon. Never wiped by new chat. */
 (function (global) {
   var H = 16;
   var LR = 0.03;
   var STEPS_PER_BURST = 2;
   var BURST_MS = 400;
   var MAX_BURST_SECONDS = 12;
-  var SAVE_EVERY = 20;
+  var SAVE_EVERY = 10;
+  var STORE = "nova-tiny-brain-v1";
+  var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
     "hello i am nova. i live on this phone. " +
@@ -16,14 +15,11 @@
     "if the light is red, stop. if the light is green, go. " +
     "remember facts. be careful. think one small step. ";
 
-  function charsOf(s) {
-    var set = {};
-    var i;
-    for (i = 0; i < s.length; i++) set[s.charAt(i)] = 1;
-    var list = Object.keys(set).sort();
+  function fixedVocab() {
     var stoi = {};
-    for (i = 0; i < list.length; i++) stoi[list[i]] = i;
-    return { itos: list, stoi: stoi, n: list.length };
+    var i;
+    for (i = 0; i < ALPHA.length; i++) stoi[ALPHA.charAt(i)] = i;
+    return { itos: ALPHA.split(""), stoi: stoi, n: ALPHA.length };
   }
 
   function zeros(n) {
@@ -61,10 +57,10 @@
     var s = 0;
     var out = new Array(arr.length);
     for (i = 0; i < arr.length; i++) {
-      out[i] = Math.exp(arr[i] - m);
+      out[i] = Math.exp(Math.min(arr[i] - m, 20));
       s += out[i];
     }
-    for (i = 0; i < arr.length; i++) out[i] /= s;
+    for (i = 0; i < arr.length; i++) out[i] /= s || 1;
     return out;
   }
 
@@ -73,26 +69,14 @@
     timer: null,
     startedAt: 0,
     model: null,
-    vocab: null,
+    vocab: fixedVocab(),
     text: BASE_TEXT,
     onUpdate: null
   };
 
-  function corpus() {
-    var extra = "";
-    try {
-      var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
-      var k;
-      if (st.memories) {
-        for (k in st.memories) extra += k + " is " + st.memories[k] + ". ";
-      }
-    } catch (e) {}
-    return BASE_TEXT + extra.toLowerCase();
-  }
-
   function loadSaved() {
     try {
-      var raw = localStorage.getItem("nova-tiny-brain-v1");
+      var raw = localStorage.getItem(STORE);
       if (!raw) return null;
       return JSON.parse(raw);
     } catch (e) {
@@ -101,30 +85,49 @@
   }
 
   function persist() {
+    if (!trainer.model) return;
     try {
-      localStorage.setItem(
-        "nova-tiny-brain-v1",
-        JSON.stringify({ model: trainer.model, vocab: trainer.vocab })
-      );
+      localStorage.setItem(STORE, JSON.stringify({
+        model: trainer.model,
+        vocab: trainer.vocab,
+        H: H
+      }));
     } catch (e) {}
   }
 
-  function prepare() {
-    trainer.text = corpus();
-    trainer.vocab = charsOf(trainer.text);
+  function restore() {
+    trainer.vocab = fixedVocab();
     var saved = loadSaved();
-    if (saved && saved.model && saved.vocab && saved.vocab.n === trainer.vocab.n) {
+    if (saved && saved.model && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n) {
       trainer.model = saved.model;
+      if (typeof trainer.model.steps !== "number") trainer.model.steps = 0;
     } else if (!trainer.model) {
       trainer.model = newModel(trainer.vocab.n);
     }
+  }
+
+  function corpus() {
+    var extra = "";
+    try {
+      var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
+      var k;
+      if (st.memories) {
+        for (k in st.memories) extra += " " + k + " is " + st.memories[k] + ".";
+      }
+    } catch (e) {}
+    return (BASE_TEXT + extra).toLowerCase();
+  }
+
+  function prepare() {
+    restore();
+    trainer.text = corpus();
   }
 
   function stepOnce() {
     var m = trainer.model;
     var v = trainer.vocab.n;
     var text = trainer.text;
-    if (text.length < 8) return;
+    if (!m || text.length < 8) return;
     var pos = Math.floor(Math.random() * (text.length - 2));
     var ch = text.charAt(pos);
     var target = text.charAt(pos + 1);
@@ -133,10 +136,7 @@
     if (x == null || y == null) return;
     var h = zeros(H);
     var i, j;
-    for (i = 0; i < H; i++) {
-      var s = m.bh[i] + m.Wxh[i * v + x];
-      h[i] = tanh(s);
-    }
+    for (i = 0; i < H; i++) h[i] = tanh(m.bh[i] + m.Wxh[i * v + x]);
     var logits = zeros(v);
     for (i = 0; i < v; i++) {
       var z = m.by[i];
@@ -171,6 +171,7 @@
   }
 
   function status() {
+    restore();
     var m = trainer.model;
     return {
       running: trainer.running,
@@ -189,11 +190,6 @@
       pause("paused after a short burst so the phone can rest");
       return;
     }
-    if (navigator.getBattery) {
-      navigator.getBattery().then(function (b) {
-        if (!b.charging && b.level < 0.2) pause("paused: battery under 20%");
-      }).catch(function () {});
-    }
     var i;
     for (i = 0; i < STEPS_PER_BURST; i++) stepOnce();
     emit();
@@ -201,12 +197,12 @@
   }
 
   function start() {
-    if (trainer.running) return "Already training in small bursts.";
+    if (trainer.running) return "Already training. Same brain as every chat on this icon.";
     prepare();
     trainer.running = true;
     trainer.startedAt = Date.now();
     burst();
-    return "Training on this phone in tiny CPU bursts. Auto-pauses after 12 seconds.";
+    return "Training the shared brain for this Home Screen icon. New chats do not reset it.";
   }
 
   function pause(reason) {
@@ -215,7 +211,7 @@
     trainer.timer = null;
     persist();
     emit();
-    return reason || "Paused. Phone can rest. Progress saved on this device.";
+    return reason || "Paused. Shared brain saved on this icon.";
   }
 
   function sample(n) {
@@ -224,7 +220,7 @@
     var v = trainer.vocab;
     if (!m || !v) return "(no brain yet)";
     n = n || 40;
-    var last = 0;
+    var last = v.stoi[" "] != null ? v.stoi[" "] : 0;
     var out = "";
     var t, i, j;
     for (t = 0; t < n; t++) {
@@ -252,37 +248,38 @@
 
   function reset() {
     pause();
-    localStorage.removeItem("nova-tiny-brain-v1");
-    trainer.model = null;
-    return "Tiny brain wiped on this phone.";
+    localStorage.removeItem(STORE);
+    trainer.model = newModel(trainer.vocab.n);
+    persist();
+    emit();
+    return "Shared brain wiped only because you asked.";
   }
 
   function exportBrain() {
-    prepare();
+    restore();
     persist();
     var payload = {
       id: "nova-export",
-      status: "private-snapshot",
-      note: "Weights only. No personal memory.",
-      updated: new Date().toISOString().slice(0, 10),
+      note: "Shared icon brain. No personal memory.",
       steps: trainer.model ? trainer.model.steps : 0,
       model: trainer.model,
       vocab: trainer.vocab
     };
-    var text = JSON.stringify(payload);
     try {
-      var blob = new Blob([text], { type: "application/json" });
+      var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "nova-brain.json";
       a.click();
     } catch (e) {}
-    return "Step one: exported weights only (no memories). Save that file. Later we replace web/brains/public.json with a good snapshot.";
+    return "Exported the shared brain (" + (trainer.model ? trainer.model.steps : 0) + " steps). Memories not included.";
   }
 
   document.addEventListener("visibilitychange", function () {
     if (document.hidden && trainer.running) pause("paused because you left Nova");
   });
+
+  restore();
 
   global.NovaTrain = {
     start: start,
