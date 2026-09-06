@@ -4,7 +4,7 @@
   var LR = 0.03;
   var STEPS_PER_BURST = 2;
   var BURST_MS = 400;
-  var MAX_BURST_SECONDS = 12;
+  var MAX_BURST_SECONDS = 30;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -188,7 +188,7 @@
       return;
     }
     if (Date.now() - trainer.startedAt > MAX_BURST_SECONDS * 1000) {
-      pause("paused after a short burst so the phone can rest");
+      pause("paused after a 30 second burst so the phone can rest");
       return;
     }
     var i;
