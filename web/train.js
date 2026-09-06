@@ -5,7 +5,6 @@
   var STEPS_PER_BURST = 2;
   var BURST_MS = 400;
   var MAX_BURST_SECONDS = 12;
-  var SAVE_EVERY = 10;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -98,11 +97,13 @@
   function restore() {
     trainer.vocab = fixedVocab();
     var saved = loadSaved();
-    if (saved && saved.model && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n) {
+    var savedOk = saved && saved.model && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
+    var savedSteps = savedOk && typeof saved.model.steps === "number" ? saved.model.steps : -1;
+    var liveSteps = trainer.model && typeof trainer.model.steps === "number" ? trainer.model.steps : -1;
+    if (savedOk && savedSteps >= liveSteps) {
       trainer.model = saved.model;
-      if (typeof trainer.model.steps !== "number") trainer.model.steps = 0;
     } else if (!trainer.model) {
-      trainer.model = newModel(trainer.vocab.n);
+      trainer.model = savedOk ? saved.model : newModel(trainer.vocab.n);
     }
   }
 
@@ -163,7 +164,7 @@
     }
     m.steps += 1;
     m.loss = loss;
-    if (m.steps % SAVE_EVERY === 0) persist();
+    persist();
   }
 
   function emit() {
@@ -171,7 +172,7 @@
   }
 
   function status() {
-    restore();
+    if (!trainer.model) restore();
     var m = trainer.model;
     return {
       running: trainer.running,
@@ -201,6 +202,7 @@
     prepare();
     trainer.running = true;
     trainer.startedAt = Date.now();
+    persist();
     burst();
     return "Training the shared brain for this Home Screen icon. New chats do not reset it.";
   }
@@ -215,7 +217,7 @@
   }
 
   function sample(n) {
-    prepare();
+    if (!trainer.model) prepare();
     var m = trainer.model;
     var v = trainer.vocab;
     if (!m || !v) return "(no brain yet)";
@@ -247,16 +249,19 @@
   }
 
   function reset() {
+    return "Reset is locked. Type reset brain confirm if you really want to wipe the shared brain.";
+  }
+
+  function resetConfirm() {
     pause();
     localStorage.removeItem(STORE);
     trainer.model = newModel(trainer.vocab.n);
     persist();
     emit();
-    return "Shared brain wiped only because you asked.";
+    return "Shared brain wiped because you typed reset brain confirm.";
   }
 
   function exportBrain() {
-    restore();
     persist();
     var payload = {
       id: "nova-export",
@@ -272,7 +277,7 @@
       a.download = "nova-brain.json";
       a.click();
     } catch (e) {}
-    return "Exported the shared brain (" + (trainer.model ? trainer.model.steps : 0) + " steps). Memories not included.";
+    return "Exported the shared brain (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
   }
 
   document.addEventListener("visibilitychange", function () {
@@ -286,6 +291,7 @@
     pause: pause,
     sample: sample,
     reset: reset,
+    resetConfirm: resetConfirm,
     status: status,
     exportBrain: exportBrain,
     onUpdate: function (fn) { trainer.onUpdate = fn; }
