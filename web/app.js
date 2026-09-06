@@ -8,28 +8,21 @@ function load() {
   }
 }
 
-function migrate(raw) {
-  if (!raw) {
-    var first = makeChat("New chat");
-    return { conversations: [first], currentId: first.id, memories: {}, sideOpen: false };
-  }
-  if (raw.conversations && raw.currentId) return raw;
-  var chat = makeChat(raw.messages && raw.messages.length ? titleFrom(raw.messages) : "New chat");
-  chat.messages = raw.messages || [];
-  return {
-    conversations: [chat],
-    currentId: chat.id,
-    memories: raw.memories || {},
-    sideOpen: false
-  };
-}
-
-function makeChat(title) {
+function makeChat(title, folderId) {
   return {
     id: "c" + Date.now() + Math.floor(Math.random() * 999),
     title: title || "New chat",
+    folderId: folderId || null,
     messages: [],
     updated: Date.now()
+  };
+}
+
+function makeFolder(name) {
+  return {
+    id: "f" + Date.now() + Math.floor(Math.random() * 999),
+    name: name || "Folder",
+    open: true
   };
 }
 
@@ -37,6 +30,29 @@ function titleFrom(messages) {
   var first = (messages || []).filter(function (m) { return m.role === "user"; })[0];
   if (!first) return "New chat";
   return String(first.content).slice(0, 28);
+}
+
+function migrate(raw) {
+  if (!raw) {
+    var first = makeChat("New chat");
+    return { conversations: [first], folders: [], currentId: first.id, memories: {}, sideOpen: true };
+  }
+  var next = raw;
+  if (!raw.conversations || !raw.currentId) {
+    var chat = makeChat(raw.messages && raw.messages.length ? titleFrom(raw.messages) : "New chat");
+    chat.messages = raw.messages || [];
+    next = {
+      conversations: [chat],
+      currentId: chat.id,
+      memories: raw.memories || {},
+      sideOpen: true
+    };
+  }
+  next.folders = next.folders || [];
+  next.conversations.forEach(function (c) {
+    if (!c.folderId) c.folderId = null;
+  });
+  return next;
 }
 
 const state = migrate(load());
@@ -59,6 +75,12 @@ function save() {
 function currentChat() {
   var found = state.conversations.filter(function (c) { return c.id === state.currentId; })[0];
   if (found) return found;
+  if (!state.conversations.length) {
+    var fresh = makeChat("New chat");
+    state.conversations.push(fresh);
+    state.currentId = fresh.id;
+    return fresh;
+  }
   state.currentId = state.conversations[0].id;
   return state.conversations[0];
 }
@@ -81,20 +103,121 @@ if (window.NovaTrain) {
   setStatus(NovaTrain.status());
 }
 
+function deleteChat(id) {
+  if (state.conversations.length < 2) {
+    alert("Keep at least one chat.");
+    return;
+  }
+  if (!confirm("Delete this chat? The shared brain stays.")) return;
+  state.conversations = state.conversations.filter(function (c) { return c.id !== id; });
+  if (state.currentId === id) state.currentId = state.conversations[0].id;
+  save();
+  render();
+}
+
+function addFolder() {
+  var name = prompt("Folder name?");
+  if (!name) return;
+  state.folders.push(makeFolder(name.trim()));
+  save();
+  renderSide();
+}
+
+function moveChat(chat) {
+  var names = state.folders.map(function (f, i) { return i + 1 + ". " + f.name; });
+  names.push("0. No folder");
+  var pick = prompt("Move chat to folder:\n" + names.join("\n"));
+  if (pick === null) return;
+  var n = parseInt(pick, 10);
+  if (n === 0) chat.folderId = null;
+  else if (n > 0 && state.folders[n - 1]) chat.folderId = state.folders[n - 1].id;
+  save();
+  renderSide();
+}
+
+function deleteFolder(id) {
+  if (!confirm("Remove folder? Chats inside are kept, ungrouped.")) return;
+  state.folders = state.folders.filter(function (f) { return f.id !== id; });
+  state.conversations.forEach(function (c) {
+    if (c.folderId === id) c.folderId = null;
+  });
+  save();
+  renderSide();
+}
+
+function chatRow(c) {
+  var wrap = document.createElement("div");
+  wrap.className = "chat-row";
+  var btn = document.createElement("button");
+  btn.className = "chat-item" + (c.id === state.currentId ? " on" : "");
+  btn.textContent = c.title || "New chat";
+  btn.onclick = function () {
+    state.currentId = c.id;
+    save();
+    render();
+  };
+  var move = document.createElement("button");
+  move.className = "mini";
+  move.textContent = "📁";
+  move.title = "Move to folder";
+  move.onclick = function (e) { e.stopPropagation(); moveChat(c); };
+  var del = document.createElement("button");
+  del.className = "mini danger";
+  del.textContent = "×";
+  del.title = "Delete chat";
+  del.onclick = function (e) { e.stopPropagation(); deleteChat(c.id); };
+  wrap.appendChild(btn);
+  wrap.appendChild(move);
+  wrap.appendChild(del);
+  return wrap;
+}
+
 function renderSide() {
   if (!chatList) return;
   chatList.innerHTML = "";
-  state.conversations.slice().sort(function (a, b) { return b.updated - a.updated; }).forEach(function (c) {
-    var btn = document.createElement("button");
-    btn.className = "chat-item" + (c.id === state.currentId ? " on" : "");
-    btn.textContent = c.title || "New chat";
-    btn.onclick = function () {
-      state.currentId = c.id;
+
+  var tools = document.createElement("div");
+  tools.className = "side-tools";
+  var nf = document.createElement("button");
+  nf.className = "side-link";
+  nf.textContent = "+ folder";
+  nf.onclick = addFolder;
+  tools.appendChild(nf);
+  chatList.appendChild(tools);
+
+  state.folders.forEach(function (folder) {
+    var head = document.createElement("div");
+    head.className = "folder-head";
+    var tog = document.createElement("button");
+    tog.className = "folder-btn";
+    tog.textContent = (folder.open ? "▾ " : "▸ ") + folder.name;
+    tog.onclick = function () {
+      folder.open = !folder.open;
       save();
-      render();
+      renderSide();
     };
-    chatList.appendChild(btn);
+    var rm = document.createElement("button");
+    rm.className = "mini";
+    rm.textContent = "×";
+    rm.onclick = function () { deleteFolder(folder.id); };
+    head.appendChild(tog);
+    head.appendChild(rm);
+    chatList.appendChild(head);
+    if (folder.open) {
+      state.conversations.filter(function (c) { return c.folderId === folder.id; })
+        .sort(function (a, b) { return b.updated - a.updated; })
+        .forEach(function (c) { chatList.appendChild(chatRow(c)); });
+    }
   });
+
+  var loose = document.createElement("p");
+  loose.className = "side-label";
+  loose.textContent = "Chats";
+  chatList.appendChild(loose);
+  state.conversations.filter(function (c) { return !c.folderId; })
+    .sort(function (a, b) { return b.updated - a.updated; })
+    .forEach(function (c) { chatList.appendChild(chatRow(c)); });
+
   if (side) side.hidden = !state.sideOpen;
 }
 
@@ -163,6 +286,7 @@ function reply(text) {
   if (T && (lower === "pause" || lower === "stop" || lower === "pause train" || lower === "stop train")) return T.pause();
   if (T && (lower === "sample" || lower === "speak brain")) return "Tiny brain sample:\n" + T.sample(50);
   if (T && (lower === "export brain" || lower === "export")) return T.exportBrain();
+  if (T && lower === "reset brain confirm") return T.resetConfirm();
   if (T && (lower === "reset brain" || lower === "wipe brain")) return T.reset();
   if (T && (lower === "train status" || lower === "brain status")) {
     var st = T.status();
