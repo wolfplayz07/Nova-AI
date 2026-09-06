@@ -30,7 +30,7 @@ function setStatus(st) {
     var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
     statusEl.textContent = "train " + st.steps + loss;
   } else if (st && st.steps) {
-    statusEl.textContent = "paused · " + st.steps + " steps";
+    statusEl.textContent = "paused \u00b7 " + st.steps + " steps";
   } else {
     statusEl.textContent = "offline brain";
   }
@@ -45,7 +45,7 @@ function render() {
   if (!state.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova</h2><p>Local only. Tiny on-phone training is optional and careful.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train a little</button><button class=\"chip\" data-fill=\"pause train\">Pause train</button><button class=\"chip\" data-fill=\"sample\">Sample</button></div>";
+    empty.innerHTML = "<h2>Nova</h2><p>Local only. Tiny on-phone training is optional and careful.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train a little</button><button class=\"chip\" data-fill=\"pause\">Pause</button><button class=\"chip\" data-fill=\"sample\">Sample</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-fill]").forEach(function (btn) {
       btn.onclick = function () {
@@ -104,7 +104,7 @@ function reply(text) {
   if (T && (lower === "train" || lower === "train a little" || lower === "start training")) {
     return T.start();
   }
-  if (T && (lower === "pause train" || lower === "stop train" || lower === "pause training")) {
+  if (T && (lower === "pause" || lower === "stop" || lower === "pause train" || lower === "stop train" || lower === "pause training")) {
     return T.pause();
   }
   if (T && (lower === "sample" || lower === "speak brain")) {
