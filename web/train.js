@@ -2,8 +2,8 @@
 (function (global) {
   var H = 16;
   var LR = 0.03;
-  var STEPS_PER_BURST = 2;
-  var BURST_MS = 400;
+  var STEPS_PER_BURST = 5;
+  var BURST_MS = 500;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -199,7 +199,7 @@
     trainer.startedAt = Date.now();
     persist();
     burst();
-    return "Training until you turn it off. Keep Nova on screen.";
+    return "Training at 10 steps/sec until you turn it off. Keep Nova on screen.";
   }
 
   function pause(reason) {
