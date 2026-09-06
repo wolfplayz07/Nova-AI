@@ -10,6 +10,7 @@ const form = document.getElementById("form");
 const draft = document.getElementById("draft");
 const mic = document.getElementById("mic");
 const newChat = document.getElementById("newChat");
+const statusEl = document.getElementById("status");
 
 function load() {
   try {
@@ -23,12 +24,28 @@ function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function setStatus(st) {
+  if (!statusEl) return;
+  if (st && st.running) {
+    var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
+    statusEl.textContent = "train " + st.steps + loss;
+  } else if (st && st.steps) {
+    statusEl.textContent = "paused · " + st.steps + " steps";
+  } else {
+    statusEl.textContent = "offline brain";
+  }
+}
+
+if (window.NovaTrain) {
+  NovaTrain.onUpdate(setStatus);
+}
+
 function render() {
   feed.innerHTML = "";
   if (!state.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova</h2><p>Local only. Nothing leaves this phone.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"remember my name is \">Remember my name</button><button class=\"chip\" data-fill=\"what do you remember\">What do you remember</button><button class=\"chip\" data-fill=\"what time is it\">What time is it</button></div>";
+    empty.innerHTML = "<h2>Nova</h2><p>Local only. Tiny on-phone training is optional and careful.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train a little</button><button class=\"chip\" data-fill=\"pause train\">Pause train</button><button class=\"chip\" data-fill=\"sample\">Sample</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-fill]").forEach(function (btn) {
       btn.onclick = function () {
@@ -59,17 +76,14 @@ function parseRemember(raw) {
   text = text.slice(8).trim();
   if (text.toLowerCase().startsWith("that ")) text = text.slice(5).trim();
   if (text.toLowerCase().startsWith("my ")) text = text.slice(3).trim();
-
   var eq = text.indexOf(" = ");
   if (eq > 0) return { key: text.slice(0, eq).trim(), value: text.slice(eq + 3).trim() };
-
   var isAt = text.toLowerCase().indexOf(" is ");
   if (isAt > 0) {
     var key = text.slice(0, isAt).trim().toLowerCase();
     if (key.endsWith(" name") || key === "name") key = "name";
     return { key: key, value: text.slice(isAt + 4).trim() };
   }
-
   if (text.toLowerCase().startsWith("i live in ")) {
     return { key: "city", value: text.slice(10).trim() };
   }
@@ -85,17 +99,36 @@ function memoryList() {
 
 function reply(text) {
   var lower = text.toLowerCase().trim();
+  var T = window.NovaTrain;
+
+  if (T && (lower === "train" || lower === "train a little" || lower === "start training")) {
+    return T.start();
+  }
+  if (T && (lower === "pause train" || lower === "stop train" || lower === "pause training")) {
+    return T.pause();
+  }
+  if (T && (lower === "sample" || lower === "speak brain")) {
+    return "Tiny brain sample (expect nonsense at first):\n" + T.sample(50);
+  }
+  if (T && (lower === "reset brain" || lower === "wipe brain")) {
+    return T.reset();
+  }
+  if (T && (lower === "train status" || lower === "brain status")) {
+    var st = T.status();
+    return "Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss;
+  }
+
   var memories = memoryList();
   var name = state.memories.name;
 
   if (["hi", "hey", "hello", "yo", "sup"].indexOf(lower) !== -1) {
     return name
       ? "Hey " + name + ". Nova is here, local only. What do you want to do?"
-      : "Hey. I'm Nova. I'm running only on this device. Tell me something to remember, or just talk.";
+      : "Hey. I'm Nova. Local only. Say train to learn a little on this phone, carefully.";
   }
 
   if (lower.indexOf("who are you") !== -1 || lower.indexOf("what are you") !== -1) {
-    return "I'm Nova, your personal assistant. Right now I run only on this device. No cloud, no API. I keep chats and facts here. A stronger brain can be added later.";
+    return "I'm Nova. I run on this device. I can remember facts and optionally train a tiny CPU brain in short bursts. That brain will not become ChatGPT.";
   }
 
   if (lower.indexOf("what do you know") !== -1 || lower.indexOf("what do you remember") !== -1 || lower === "memory") {
