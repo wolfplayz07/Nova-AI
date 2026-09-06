@@ -14,15 +14,22 @@
 <body>
   <div class="app">
     <header class="top">
+      <button class="icon-btn" id="toggleSide" title="Chats">≡</button>
       <div class="mark" aria-hidden="true"></div>
       <div class="titles">
         <h1>NOVA</h1>
-        <p>Local · on this device</p>
+        <p id="chatTitle">Local · on this device</p>
       </div>
       <span class="status" id="status">offline brain</span>
       <button class="icon-btn" id="newChat" title="New chat">+</button>
     </header>
-    <main class="feed" id="feed"></main>
+    <div class="shell">
+      <aside class="side" id="side" hidden>
+        <p class="side-label">Chats</p>
+        <div id="chatList"></div>
+      </aside>
+      <main class="feed" id="feed"></main>
+    </div>
     <form class="composer" id="form">
       <button type="button" class="mic" id="mic" title="Speak">mic</button>
       <textarea id="draft" rows="1" placeholder="Talk to Nova" enterkeyhint="send"></textarea>
