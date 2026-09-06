@@ -7,7 +7,7 @@ actor NovaAgent {
         self.model = model
     }
 
-    func respond(to history: [ModelMessage]) async throws -> String {
-        try await model.generate(messages: history)
+    func respond(to history: [ModelMessage], memories: [MemoryFact] = []) async throws -> String {
+        try await model.generate(messages: history, memories: memories)
     }
 }
