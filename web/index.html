@@ -21,6 +21,16 @@
         <p id="chatTitle">Local · on this device</p>
       </div>
       <span class="status" id="status">offline brain</span>
+      <div class="train-wrap">
+        <button type="button" class="train-btn" id="trainBtn" title="Train until you stop">Train</button>
+        <button type="button" class="icon-btn menu-btn" id="brainMenuBtn" title="Brain menu" aria-haspopup="true">⋮</button>
+        <div class="brain-menu" id="brainMenu" hidden>
+          <button type="button" data-act="toggle">Start training</button>
+          <button type="button" data-act="sample">Sample</button>
+          <button type="button" data-act="status">Train status</button>
+          <button type="button" data-act="export">Export brain</button>
+        </div>
+      </div>
       <button class="icon-btn" id="newChat" title="New chat">+</button>
     </header>
     <div class="shell">

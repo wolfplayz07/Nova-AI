@@ -67,6 +67,9 @@ const side = document.getElementById("side");
 const chatList = document.getElementById("chatList");
 const toggleSide = document.getElementById("toggleSide");
 const chatTitle = document.getElementById("chatTitle");
+const trainBtn = document.getElementById("trainBtn");
+const brainMenuBtn = document.getElementById("brainMenuBtn");
+const brainMenu = document.getElementById("brainMenu");
 
 function save() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -85,9 +88,23 @@ function currentChat() {
   return state.conversations[0];
 }
 
+function syncTrainUi(st) {
+  if (!st && window.NovaTrain) st = NovaTrain.status();
+  var running = !!(st && st.running);
+  if (trainBtn) {
+    trainBtn.textContent = running ? "Stop" : "Train";
+    trainBtn.classList.toggle("on", running);
+  }
+  if (brainMenu) {
+    var tog = brainMenu.querySelector("[data-act=toggle]");
+    if (tog) tog.textContent = running ? "Stop training" : "Start training";
+  }
+}
+
 function setStatus(st) {
   if (!statusEl) return;
   if (!st && window.NovaTrain) st = NovaTrain.status();
+  syncTrainUi(st);
   if (st && st.running) {
     var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
     statusEl.textContent = "train " + st.steps + loss;
@@ -101,6 +118,50 @@ function setStatus(st) {
 if (window.NovaTrain) {
   NovaTrain.onUpdate(setStatus);
   setStatus(NovaTrain.status());
+}
+
+function note(text) {
+  var chat = currentChat();
+  chat.messages.push({ role: "assistant", content: text, at: Date.now() });
+  chat.updated = Date.now();
+  save();
+  render();
+}
+
+function runBrain(act) {
+  var T = window.NovaTrain;
+  if (!T) return;
+  if (act === "toggle") note(T.toggle());
+  else if (act === "sample") note("Tiny brain sample:\n" + T.sample(50));
+  else if (act === "status") {
+    var st = T.status();
+    note("Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss);
+  } else if (act === "export") note(T.exportBrain());
+}
+
+function closeMenu() {
+  if (brainMenu) brainMenu.hidden = true;
+}
+
+if (trainBtn) {
+  trainBtn.addEventListener("click", function () {
+    closeMenu();
+    runBrain("toggle");
+  });
+}
+
+if (brainMenuBtn && brainMenu) {
+  brainMenuBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    brainMenu.hidden = !brainMenu.hidden;
+  });
+  brainMenu.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    closeMenu();
+    runBrain(btn.getAttribute("data-act"));
+  });
+  document.addEventListener("click", function () { closeMenu(); });
 }
 
 function deleteChat(id) {
@@ -230,13 +291,10 @@ function render() {
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova</h2><p>New chat. Training and memories stay.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train</button><button class=\"chip\" data-fill=\"pause\">Pause</button><button class=\"chip\" data-fill=\"export brain\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova</h2><p>New chat. Training and memories stay.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
     feed.appendChild(empty);
-    feed.querySelectorAll("[data-fill]").forEach(function (btn) {
-      btn.onclick = function () {
-        draft.value = btn.dataset.fill;
-        draft.focus();
-      };
+    feed.querySelectorAll("[data-act]").forEach(function (btn) {
+      btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
     });
     return;
   }

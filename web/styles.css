@@ -33,7 +33,7 @@ body {
 .top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: calc(14px + env(safe-area-inset-top)) 12px 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -56,6 +56,48 @@ body {
   color: var(--text);
   border-radius: 14px;
 }
+.train-wrap { position: relative; display: flex; align-items: center; gap: 4px; }
+.train-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.train-btn.on {
+  background: #143326;
+  border-color: rgba(141, 255, 195, 0.35);
+  color: var(--ok);
+}
+.menu-btn { width: 32px; height: 32px; border-radius: 12px; font-size: 18px; line-height: 1; }
+.brain-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  background: #121624;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 6px;
+  z-index: 20;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+.brain-menu[hidden] { display: none; }
+.brain-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+.brain-menu button:active { background: var(--card); }
 
 .shell { display: flex; min-height: 0; }
 .side {

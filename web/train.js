@@ -4,7 +4,6 @@
   var LR = 0.03;
   var STEPS_PER_BURST = 2;
   var BURST_MS = 400;
-  var MAX_BURST_SECONDS = 30;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -187,10 +186,6 @@
       pause("paused because the app went to the background");
       return;
     }
-    if (Date.now() - trainer.startedAt > MAX_BURST_SECONDS * 1000) {
-      pause("paused after a 30 second burst so the phone can rest");
-      return;
-    }
     var i;
     for (i = 0; i < STEPS_PER_BURST; i++) stepOnce();
     emit();
@@ -204,7 +199,7 @@
     trainer.startedAt = Date.now();
     persist();
     burst();
-    return "Training the shared brain for this Home Screen icon. New chats do not reset it.";
+    return "Training until you turn it off. Keep Nova on screen.";
   }
 
   function pause(reason) {
@@ -214,6 +209,10 @@
     persist();
     emit();
     return reason || "Paused. Shared brain saved on this icon.";
+  }
+
+  function toggle() {
+    return trainer.running ? pause() : start();
   }
 
   function sample(n) {
@@ -289,6 +288,7 @@
   global.NovaTrain = {
     start: start,
     pause: pause,
+    toggle: toggle,
     sample: sample,
     reset: reset,
     resetConfirm: resetConfirm,
