@@ -2,7 +2,7 @@
 (function (global) {
   var H = 16;
   var SEQ = 12;
-  var LR = 0.03;
+  var LR = 0.05;
   var STEPS_PER_SEC = 40;
   var TICK_MS = 50;
   var PERSIST_MS = 2000;
@@ -10,14 +10,15 @@
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
-    "you: hello\nnova: hey. i am nova. i live on this phone.\n" +
-    "you: who are you\nnova: i am nova. a small brain on this device.\n" +
-    "you: how are you\nnova: i am here. still learning.\n" +
+    "you: hello\nnova: hey.\n" +
+    "you: hello\nnova: hey. i am nova.\n" +
+    "you: hi\nnova: hey.\n" +
+    "you: hey\nnova: hey.\n" +
+    "you: hello there\nnova: hey.\n" +
+    "you: who are you\nnova: i am nova.\n" +
+    "you: how are you\nnova: i am here.\n" +
     "you: what is two plus two\nnova: four.\n" +
     "you: what is one plus one\nnova: two.\n" +
-    "you: if the light is red\nnova: stop.\n" +
-    "you: if the light is green\nnova: go.\n" +
-    "you: remember facts\nnova: i will remember what you save.\n" +
     "you: thanks\nnova: you are welcome.\n";
 
   function fixedVocab() {
@@ -56,14 +57,15 @@
 
   function tanh(x) { return Math.tanh(x); }
 
-  function softmax(arr) {
+  function softmax(arr, temp) {
+    if (!temp || temp <= 0) temp = 1;
     var m = -Infinity;
     var i;
     for (i = 0; i < arr.length; i++) if (arr[i] > m) m = arr[i];
     var s = 0;
     var out = new Array(arr.length);
     for (i = 0; i < arr.length; i++) {
-      out[i] = Math.exp(Math.min(arr[i] - m, 20));
+      out[i] = Math.exp(Math.min((arr[i] - m) / temp, 20));
       s += out[i];
     }
     for (i = 0; i < arr.length; i++) out[i] /= s || 1;
@@ -140,24 +142,11 @@
       var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
       var k;
       if (st.memories) {
-        for (k in st.memories) extra += "you: what is " + k + "\nnova: " + st.memories[k] + ".\n";
-      }
-      if (st.conversations) {
-        st.conversations.forEach(function (c) {
-          var msgs = (c.messages || []).slice(-8);
-          var i;
-          for (i = 0; i < msgs.length - 1; i++) {
-            if (msgs[i].role === "user" && msgs[i + 1].role === "assistant") {
-              var a = sanitize(msgs[i + 1].content);
-              if (a.indexOf("tiny brain sample") === 0) continue;
-              if (a.indexOf("training at ") === 0) continue;
-              extra += "you: " + sanitize(msgs[i].content) + "\nnova: " + a + "\n";
-            }
-          }
-        });
+        for (k in st.memories) extra += "you: what is " + sanitize(k) + "\nnova: " + sanitize(st.memories[k]) + ".\n";
       }
     } catch (e) {}
-    return sanitize(BASE_TEXT + extra);
+    var core = BASE_TEXT + BASE_TEXT + extra;
+    return sanitize(core);
   }
 
   function prepare() {
@@ -193,7 +182,6 @@
       ys.push(cy);
     }
     var hs = [zeros(H)];
-    var logitsList = [];
     var pList = [];
     for (t = 0; t < SEQ; t++) {
       var h = forwardChar(m, v, xs[t], hs[t]);
@@ -204,8 +192,7 @@
         for (j = 0; j < H; j++) z += m.Why[i * H + j] * h[j];
         logits[i] = z;
       }
-      logitsList.push(logits);
-      pList.push(softmax(logits));
+      pList.push(softmax(logits, 1));
     }
     var loss = 0;
     for (t = 0; t < SEQ; t++) loss += -Math.log(Math.max(pList[t][ys[t]], 1e-8));
@@ -324,6 +311,13 @@
     return trainer.running ? pause() : start();
   }
 
+  function argmax(p) {
+    var best = 0;
+    var i;
+    for (i = 1; i < p.length; i++) if (p[i] > p[best]) best = i;
+    return best;
+  }
+
   function pick(p) {
     var r = Math.random();
     var acc = 0;
@@ -335,7 +329,7 @@
     return p.length - 1;
   }
 
-  function generate(seed, maxLen) {
+  function generate(seed, maxLen, temp) {
     if (!trainer.model) prepare();
     var m = trainer.model;
     var v = trainer.vocab;
@@ -343,7 +337,7 @@
     seed = sanitize(seed);
     if (!seed) seed = "you: hello\nnova: ";
     var prev = zeros(H);
-    var last = v.stoi[" "] != null ? v.stoi[" "] : 0;
+    var last = 0;
     var i, t;
     for (t = 0; t < seed.length; t++) {
       last = v.stoi[seed.charAt(t)];
@@ -351,7 +345,7 @@
       prev = forwardChar(m, v.n, last, prev);
     }
     var out = "";
-    for (t = 0; t < (maxLen || 60); t++) {
+    for (t = 0; t < (maxLen || 40); t++) {
       var logits = zeros(v.n);
       for (i = 0; i < v.n; i++) {
         var z = m.by[i];
@@ -359,7 +353,8 @@
         for (j = 0; j < H; j++) z += m.Why[i * H + j] * prev[j];
         logits[i] = z;
       }
-      var idx = pick(softmax(logits));
+      var p = softmax(logits, temp == null ? 0.6 : temp);
+      var idx = temp === 0 ? argmax(p) : pick(p);
       var ch = v.itos[idx];
       if (ch === "\n") break;
       out += ch;
@@ -369,12 +364,12 @@
   }
 
   function sample(n) {
-    return generate("nova: ", n || 40) || "(no brain yet)";
+    return generate("you: hello\nnova: ", n || 20, 0.4) || "(no brain yet)";
   }
 
   function talk(userText) {
     var seed = "you: " + sanitize(userText) + "\nnova: ";
-    var out = generate(seed, 80);
+    var out = generate(seed, 24, 0);
     if (!out) return "still learning. train me a while, then try again.";
     return out;
   }
