@@ -245,7 +245,6 @@ function chatRow(c) {
 function renderSide() {
   if (!chatList) return;
   chatList.innerHTML = "";
-
   var tools = document.createElement("div");
   tools.className = "side-tools";
   var nf = document.createElement("button");
@@ -254,7 +253,6 @@ function renderSide() {
   nf.onclick = addFolder;
   tools.appendChild(nf);
   chatList.appendChild(tools);
-
   state.folders.forEach(function (folder) {
     var head = document.createElement("div");
     head.className = "folder-head";
@@ -279,7 +277,6 @@ function renderSide() {
         .forEach(function (c) { chatList.appendChild(chatRow(c)); });
     }
   });
-
   var loose = document.createElement("p");
   loose.className = "side-label";
   loose.textContent = "Chats";
@@ -287,7 +284,6 @@ function renderSide() {
   state.conversations.filter(function (c) { return !c.folderId; })
     .sort(function (a, b) { return b.updated - a.updated; })
     .forEach(function (c) { chatList.appendChild(chatRow(c)); });
-
   if (side) side.hidden = !state.sideOpen;
 }
 
@@ -300,7 +296,7 @@ function render() {
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova v4</h2><p>Chat. If I get it wrong, type <b>fix hey.</b> or <b>when I say hi say hey</b>.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova v4</h2><p>Paste <b>read ...</b> or a webpage link. I cannot watch video or see pictures.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-act]").forEach(function (btn) {
       btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
@@ -357,7 +353,17 @@ function reply(text) {
   if (T && (lower === "reset brain" || lower === "wipe brain")) return T.reset();
   if (T && (lower === "train status" || lower === "brain status")) {
     var st = T.status();
-    return "Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss + ". Lessons: " + (st.lessons || 0);
+    return "Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss;
+  }
+  if (/\.(jpg|jpeg|png|gif|webp|heic|mp4|mov|webm|m4v)(\?|$)/i.test(text)) {
+    return "I only eat letters. I cannot see pictures or watch video. Copy the words and send: read those words";
+  }
+  var url = text.match(/https?:\/\/\S+/i);
+  if (url && T && T.readUrl) {
+    T.readUrl(url[0]).then(function (msg) { note(msg); }).catch(function () {
+      note("Could not open that page. Paste the text instead: read ...");
+    });
+    return "Trying to read that page. Lots of sites block the phone. If nothing useful comes back, paste the words after read.";
   }
   var memories = memoryList();
   if (lower.indexOf("what do you remember") !== -1 || lower === "memory") {
