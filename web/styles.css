@@ -59,7 +59,7 @@ body {
 
 .shell { display: flex; min-height: 0; }
 .side {
-  width: 168px;
+  width: 188px;
   flex-shrink: 0;
   border-right: 1px solid var(--line);
   padding: 10px 8px;
@@ -69,10 +69,23 @@ body {
 .side-label {
   font-size: 11px;
   color: var(--muted);
-  margin: 0 6px 8px;
+  margin: 10px 6px 6px;
 }
-.chat-item {
-  width: 100%;
+.side-tools { margin-bottom: 8px; }
+.side-link {
+  border: 0;
+  background: transparent;
+  color: var(--ok);
+  font-size: 12px;
+}
+.folder-head, .chat-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.folder-btn, .chat-item {
+  flex: 1;
   text-align: left;
   border: 1px solid transparent;
   background: transparent;
@@ -80,9 +93,17 @@ body {
   border-radius: 10px;
   padding: 8px;
   font-size: 13px;
-  margin-bottom: 4px;
 }
 .chat-item.on { background: var(--card); border-color: var(--line); }
+.mini {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+}
+.mini.danger { color: #ff8b8b; }
 
 .feed {
   flex: 1;
