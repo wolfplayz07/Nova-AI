@@ -1,22 +1,31 @@
-const CACHE = "nova-local-v1";
-const ASSETS = ["./" ,"./index.html", "./styles.css", "./app.js", "./manifest.json", "./icon.svg"];
+const CACHE = "nova-local-v2";
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));
+self.addEventListener("install", function () {
   self.skipWaiting();
 });
 
-self.addEventListener("activate", (event) => {
+self.addEventListener("activate", function (event) {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+    }).then(function () {
+      return self.clients.claim();
+    })
   );
-  self.clients.claim();
 });
 
-self.addEventListener("fetch", (event) => {
+self.addEventListener("fetch", function (event) {
   event.respondWith(
-    caches.match(event.request).then((hit) => hit || fetch(event.request))
+    fetch(event.request)
+      .then(function (res) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (cache) {
+          cache.put(event.request, copy);
+        });
+        return res;
+      })
+      .catch(function () {
+        return caches.match(event.request);
+      })
   );
 });
