@@ -1,4 +1,4 @@
-/* Nova v4. Discovers words from English text + your messages. Not from its own junk. */
+/* Nova v4. Discovers words from English text + your messages + read paste. */
 (function (global) {
   var H = 32;
   var SEQ = 20;
@@ -8,6 +8,8 @@
   var PERSIST_MS = 3000;
   var STORE = "nova-tiny-brain-v4";
   var LESSONS = "nova-lessons-v4";
+  var READ = "nova-read-v4";
+  var MAX_READ = 20000;
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
@@ -93,6 +95,7 @@
     vocab: fixedVocab(),
     text: BASE_TEXT,
     lessons: [],
+    reading: "",
     onUpdate: null
   };
 
@@ -126,8 +129,16 @@
     }
   }
 
+  function loadReading() {
+    try { return localStorage.getItem(READ) || ""; } catch (e) { return ""; }
+  }
+
   function saveLessons() {
     try { localStorage.setItem(LESSONS, JSON.stringify(trainer.lessons.slice(-80))); } catch (e) {}
+  }
+
+  function saveReading() {
+    try { localStorage.setItem(READ, trainer.reading.slice(-MAX_READ)); } catch (e) {}
   }
 
   function persist() {
@@ -172,6 +183,7 @@
       trainer.model = newModel(v);
     }
     trainer.lessons = loadLessons();
+    trainer.reading = loadReading();
     ensureWork();
   }
 
@@ -191,7 +203,7 @@
   }
 
   function corpus() {
-    var extra = "";
+    var extra = trainer.reading || "";
     var i;
     for (i = 0; i < trainer.lessons.length; i++) {
       extra += pairText(trainer.lessons[i].user, trainer.lessons[i].nova);
@@ -333,6 +345,16 @@
     return true;
   }
 
+  function addReading(chunk) {
+    chunk = sanitize(chunk);
+    if (chunk.length < 8) return 0;
+    trainer.reading = (trainer.reading + " " + chunk).slice(-MAX_READ);
+    saveReading();
+    prepare();
+    drill(20);
+    return chunk.length;
+  }
+
   function emit() {
     if (trainer.onUpdate) trainer.onUpdate(status());
   }
@@ -351,7 +373,8 @@
       steps: m ? m.steps : 0,
       loss: m && m.loss != null ? m.loss : null,
       rate: measuredRate(),
-      lessons: trainer.lessons.length
+      lessons: trainer.lessons.length,
+      reading: (trainer.reading || "").length
     };
   }
 
@@ -382,7 +405,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training v4 on English text plus your messages. Words come from data, not from my old replies.";
+    return "Training v4 on English + anything you paste after read.";
   }
 
   function pause(reason) {
@@ -468,6 +491,17 @@
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
     var m;
+    if (lower === "forget reading") {
+      trainer.reading = "";
+      saveReading();
+      prepare();
+      return "cleared the reading pile.";
+    }
+    if (lower.indexOf("read ") === 0) {
+      var n = addReading(raw.slice(5));
+      if (!n) return "need a longer chunk after read.";
+      return "added " + n + " letters. reading pile is " + trainer.reading.length + " letters. tap Train.";
+    }
     m = lower.match(/^fix[:\s]+(.+)$/);
     if (m && lastUser) {
       addLesson(lastUser, m[1]);
@@ -496,12 +530,12 @@
     trainer.model = newModel(trainer.vocab.n);
     persist();
     emit();
-    return "v4 brain wiped. Lessons were kept.";
+    return "v4 brain wiped. Reading pile and lessons were kept.";
   }
 
   function exportBrain() {
     persist();
-    return "Exported v4 (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
+    return "Exported v4 (" + (trainer.model ? trainer.model.steps : 0) + " steps, " + (trainer.reading || "").length + " read letters).";
   }
 
   document.addEventListener("visibilitychange", function () {
