@@ -21,10 +21,9 @@
     var i;
     for (i = 0; i < s.length; i++) set[s.charAt(i)] = 1;
     var list = Object.keys(set).sort();
-    var itos = list;
     var stoi = {};
     for (i = 0; i < list.length; i++) stoi[list[i]] = i;
-    return { itos: itos, stoi: stoi, n: list.length };
+    return { itos: list, stoi: stoi, n: list.length };
   }
 
   function zeros(n) {
@@ -53,9 +52,7 @@
     };
   }
 
-  function tanh(x) {
-    return Math.tanh(x);
-  }
+  function tanh(x) { return Math.tanh(x); }
 
   function softmax(arr) {
     var m = -Infinity;
@@ -118,7 +115,7 @@
     var saved = loadSaved();
     if (saved && saved.model && saved.vocab && saved.vocab.n === trainer.vocab.n) {
       trainer.model = saved.model;
-    } else {
+    } else if (!trainer.model) {
       trainer.model = newModel(trainer.vocab.n);
     }
   }
@@ -128,22 +125,18 @@
     var v = trainer.vocab.n;
     var text = trainer.text;
     if (text.length < 8) return;
-
     var pos = Math.floor(Math.random() * (text.length - 2));
     var ch = text.charAt(pos);
     var target = text.charAt(pos + 1);
     var x = trainer.vocab.stoi[ch];
     var y = trainer.vocab.stoi[target];
     if (x == null || y == null) return;
-
     var h = zeros(H);
     var i, j;
     for (i = 0; i < H; i++) {
-      var s = m.bh[i];
-      s += m.Wxh[i * v + x];
+      var s = m.bh[i] + m.Wxh[i * v + x];
       h[i] = tanh(s);
     }
-
     var logits = zeros(v);
     for (i = 0; i < v; i++) {
       var z = m.by[i];
@@ -152,17 +145,12 @@
     }
     var p = softmax(logits);
     var loss = -Math.log(Math.max(p[y], 1e-8));
-
     var dlog = p.slice();
     dlog[y] -= 1;
-
     for (i = 0; i < v; i++) {
       m.by[i] -= LR * dlog[i];
-      for (j = 0; j < H; j++) {
-        m.Why[i * H + j] -= LR * dlog[i] * h[j];
-      }
+      for (j = 0; j < H; j++) m.Why[i * H + j] -= LR * dlog[i] * h[j];
     }
-
     var dh = zeros(H);
     for (j = 0; j < H; j++) {
       var g = 0;
@@ -173,7 +161,6 @@
       m.bh[j] -= LR * dh[j];
       m.Wxh[j * v + x] -= LR * dh[j];
     }
-
     m.steps += 1;
     m.loss = loss;
     if (m.steps % SAVE_EVERY === 0) persist();
@@ -219,7 +206,7 @@
     trainer.running = true;
     trainer.startedAt = Date.now();
     burst();
-    return "Training on this phone in tiny CPU bursts. 2 steps, then a rest. Auto-pauses after 12 seconds. Keep Nova on screen. If the phone gets warm, say pause train.";
+    return "Training on this phone in tiny CPU bursts. Auto-pauses after 12 seconds.";
   }
 
   function pause(reason) {
@@ -237,16 +224,12 @@
     var v = trainer.vocab;
     if (!m || !v) return "(no brain yet)";
     n = n || 40;
-    var seed = " ";
-    var out = seed;
-    var last = v.stoi[seed] != null ? v.stoi[seed] : 0;
+    var last = 0;
+    var out = "";
     var t, i, j;
     for (t = 0; t < n; t++) {
       var h = zeros(H);
-      for (i = 0; i < H; i++) {
-        var s = m.bh[i] + m.Wxh[i * v.n + last];
-        h[i] = tanh(s);
-      }
+      for (i = 0; i < H; i++) h[i] = tanh(m.bh[i] + m.Wxh[i * v.n + last]);
       var logits = zeros(v.n);
       for (i = 0; i < v.n; i++) {
         var z = m.by[i];
@@ -259,10 +242,7 @@
       var pick = 0;
       for (i = 0; i < p.length; i++) {
         acc += p[i];
-        if (r <= acc) {
-          pick = i;
-          break;
-        }
+        if (r <= acc) { pick = i; break; }
       }
       out += v.itos[pick];
       last = pick;
@@ -277,6 +257,29 @@
     return "Tiny brain wiped on this phone.";
   }
 
+  function exportBrain() {
+    prepare();
+    persist();
+    var payload = {
+      id: "nova-export",
+      status: "private-snapshot",
+      note: "Weights only. No personal memory.",
+      updated: new Date().toISOString().slice(0, 10),
+      steps: trainer.model ? trainer.model.steps : 0,
+      model: trainer.model,
+      vocab: trainer.vocab
+    };
+    var text = JSON.stringify(payload);
+    try {
+      var blob = new Blob([text], { type: "application/json" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "nova-brain.json";
+      a.click();
+    } catch (e) {}
+    return "Step one: exported weights only (no memories). Save that file. Later we replace web/brains/public.json with a good snapshot.";
+  }
+
   document.addEventListener("visibilitychange", function () {
     if (document.hidden && trainer.running) pause("paused because you left Nova");
   });
@@ -287,8 +290,7 @@
     sample: sample,
     reset: reset,
     status: status,
-    onUpdate: function (fn) {
-      trainer.onUpdate = fn;
-    }
+    exportBrain: exportBrain,
+    onUpdate: function (fn) { trainer.onUpdate = fn; }
   };
 })(window);
