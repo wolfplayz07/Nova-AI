@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#07080d" />
+  <title>Nova</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="mark" aria-hidden="true"></div>
+      <div class="titles">
+        <h1>NOVA</h1>
+        <p>Local · on this device</p>
+      </div>
+      <span class="status" id="status">offline brain</span>
+      <button class="icon-btn" id="newChat" title="New chat">+</button>
+    </header>
+    <main class="feed" id="feed"></main>
+    <form class="composer" id="form">
+      <button type="button" class="mic" id="mic" title="Speak">mic</button>
+      <textarea id="draft" rows="1" placeholder="Talk to Nova" enterkeyhint="send"></textarea>
+      <button type="submit" class="send" title="Send">↑</button>
+    </form>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
