@@ -2,8 +2,8 @@
 (function (global) {
   var H = 16;
   var LR = 0.03;
-  var STEPS_PER_BURST = 5;
-  var BURST_MS = 500;
+  var STEPS_PER_SEC = 10;
+  var TICK_MS = 100;
   var STORE = "nova-tiny-brain-v1";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
@@ -66,6 +66,7 @@
     running: false,
     timer: null,
     startedAt: 0,
+    sessionSteps: 0,
     model: null,
     vocab: fixedVocab(),
     text: BASE_TEXT,
@@ -163,7 +164,6 @@
     }
     m.steps += 1;
     m.loss = loss;
-    persist();
   }
 
   function emit() {
@@ -176,7 +176,8 @@
     return {
       running: trainer.running,
       steps: m ? m.steps : 0,
-      loss: m && m.loss != null ? m.loss : null
+      loss: m && m.loss != null ? m.loss : null,
+      rate: STEPS_PER_SEC
     };
   }
 
@@ -186,10 +187,17 @@
       pause("paused because the app went to the background");
       return;
     }
+    var elapsed = Date.now() - trainer.startedAt;
+    var target = Math.floor(elapsed * STEPS_PER_SEC / 1000);
+    var behind = target - trainer.sessionSteps;
+    var n = behind < 1 ? 1 : behind;
+    if (n > 20) n = 20;
     var i;
-    for (i = 0; i < STEPS_PER_BURST; i++) stepOnce();
+    for (i = 0; i < n; i++) stepOnce();
+    trainer.sessionSteps += n;
+    persist();
     emit();
-    trainer.timer = setTimeout(burst, BURST_MS);
+    trainer.timer = setTimeout(burst, TICK_MS);
   }
 
   function start() {
@@ -197,6 +205,7 @@
     prepare();
     trainer.running = true;
     trainer.startedAt = Date.now();
+    trainer.sessionSteps = 0;
     persist();
     burst();
     return "Training at 10 steps/sec until you turn it off. Keep Nova on screen.";
