@@ -14,22 +14,20 @@ After you turn Pages on (one time), the stable site will be:
 
 Safari → that link → Share → Add to Home Screen.
 
-## Auto updates
+## What this icon is
 
-Every push to `main` that touches `web/` runs `.github/workflows/pages.yml` and republishes the site. Same idea as Cloudflare Pages: git push → live site.
+**v3** is a 32-unit character RNN. It can learn a short phrase book. It will not talk like Grok.
 
-You still need one owner click: repo **Settings → Pages → Source = GitHub Actions**.
-
-Cloudflare Pages is the same pattern (connect this repo, output folder `web`). Not connected from this chat; GitHub Actions is already in the repo.
+The long path (on-device LM in Swift) is in [ROADMAP.md](ROADMAP.md).
 
 ## Careful on-phone training
-
-Tiny CPU toy. Not ChatGPT. No phone GPU.
 
 ```
 train
 pause
 sample
 train status
-reset brain
+reset brain confirm
 ```
+
+v3 starts at 0 steps (new store: `nova-tiny-brain-v3`). Old v2 weights are left alone.

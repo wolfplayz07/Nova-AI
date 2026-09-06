@@ -1,12 +1,12 @@
-/* Nova v2 recurrent trainer. Replies to the last user line. */
+/* Nova v3 recurrent trainer. Bigger phrase brain. Still not an LLM. */
 (function (global) {
-  var H = 16;
-  var SEQ = 12;
-  var LR = 0.05;
-  var STEPS_PER_SEC = 100;
-  var TICK_MS = 25;
+  var H = 32;
+  var SEQ = 24;
+  var LR = 0.03;
+  var STEPS_PER_SEC = 40;
+  var TICK_MS = 40;
   var PERSIST_MS = 2000;
-  var STORE = "nova-tiny-brain-v2";
+  var STORE = "nova-tiny-brain-v3";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 
   var BASE_TEXT =
@@ -23,7 +23,10 @@
     "you: can you do math\nnova: two plus two is four.\n" +
     "you: what is two plus two\nnova: four.\n" +
     "you: what is one plus one\nnova: two.\n" +
-    "you: what else have you learned\nnova: hello, math, and my name.\n";
+    "you: what else have you learned\nnova: hello, math, and my name.\n" +
+    "you: what is your name\nnova: nova.\n" +
+    "you: goodbye\nnova: bye.\n" +
+    "you: what time is it\nnova: i cannot see the clock yet.\n";
 
   function fixedVocab() {
     var stoi = {};
@@ -42,7 +45,7 @@
   function randn(n) {
     var a = new Array(n);
     var i;
-    for (i = 0; i < n; i++) a[i] = (Math.random() - 0.5) * 0.2;
+    for (i = 0; i < n; i++) a[i] = (Math.random() - 0.5) * 0.15;
     return a;
   }
 
@@ -55,7 +58,7 @@
       by: zeros(v),
       steps: 0,
       loss: null,
-      kind: "rnn-v2"
+      kind: "rnn-v3"
     };
   }
 
@@ -119,7 +122,7 @@
   function restore() {
     trainer.vocab = fixedVocab();
     var saved = loadSaved();
-    var savedOk = saved && saved.model && saved.model.kind === "rnn-v2" && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
+    var savedOk = saved && saved.model && saved.model.kind === "rnn-v3" && saved.model.Wxh && saved.model.Wxh.length === H * trainer.vocab.n;
     var savedSteps = savedOk && typeof saved.model.steps === "number" ? saved.model.steps : -1;
     var liveSteps = trainer.model && typeof trainer.model.steps === "number" ? trainer.model.steps : -1;
     if (savedOk && savedSteps >= liveSteps) {
@@ -149,8 +152,7 @@
         for (k in st.memories) extra += "you: what is " + sanitize(k) + "\nnova: " + sanitize(st.memories[k]) + ".\n";
       }
     } catch (e) {}
-    var core = BASE_TEXT + BASE_TEXT + extra;
-    return sanitize(core);
+    return sanitize(BASE_TEXT + BASE_TEXT + extra);
   }
 
   function prepare() {
@@ -281,7 +283,7 @@
     var now = Date.now();
     var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000);
     var need = due - trainer.sessionSteps;
-    if (need > 200) need = 200;
+    if (need > 40) need = 40;
     var i;
     for (i = 0; i < need; i++) stepOnce();
     if (need > 0) trainer.sessionSteps += need;
@@ -299,7 +301,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training the v2 reply brain at 100 steps/sec. Keep Nova on screen.";
+    return "Training v3 (32-unit) at up to 40 steps/sec. New brain. Keep Nova on screen.";
   }
 
   function pause(reason) {
@@ -308,7 +310,7 @@
     trainer.timer = null;
     persist();
     emit();
-    return reason || "Paused. Shared brain saved on this icon.";
+    return reason || "Paused. Shared v3 brain saved on this icon.";
   }
 
   function toggle() {
@@ -373,7 +375,7 @@
 
   function talk(userText) {
     var seed = "you: " + sanitize(userText) + "\nnova: ";
-    var out = generate(seed, 32, 0);
+    var out = generate(seed, 40, 0);
     if (!out) return "still learning. train me a while, then try again.";
     return out;
   }
@@ -388,13 +390,13 @@
     trainer.model = newModel(trainer.vocab.n);
     persist();
     emit();
-    return "Shared v2 brain wiped because you typed reset brain confirm.";
+    return "Shared v3 brain wiped because you typed reset brain confirm.";
   }
 
   function exportBrain() {
     persist();
     var payload = {
-      id: "nova-export-v2",
+      id: "nova-export-v3",
       note: "Shared icon brain. No personal memory.",
       steps: trainer.model ? trainer.model.steps : 0,
       model: trainer.model,
@@ -404,10 +406,10 @@
       var blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
       var a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "nova-brain.json";
+      a.download = "nova-brain-v3.json";
       a.click();
     } catch (e) {}
-    return "Exported the shared brain (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
+    return "Exported the shared v3 brain (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
   }
 
   document.addEventListener("visibilitychange", function () {
