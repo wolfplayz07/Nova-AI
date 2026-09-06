@@ -1,4 +1,4 @@
-/* Nova v4. Typed-array RNN. Learns seed lines + your corrections only. */
+/* Nova v4. Discovers words from English text + your messages. Not from its own junk. */
 (function (global) {
   var H = 32;
   var SEQ = 20;
@@ -13,19 +13,18 @@
   var BASE_TEXT =
     "you: hello\nnova: hey.\n" +
     "you: hi\nnova: hey.\n" +
-    "you: hey\nnova: hey.\n" +
     "you: who are you\nnova: i am nova.\n" +
     "you: how are you\nnova: i am here.\n" +
-    "you: how old are you\nnova: i am new.\n" +
-    "you: why\nnova: i am still learning.\n" +
-    "you: ok\nnova: ok.\n" +
-    "you: thanks\nnova: you are welcome.\n" +
-    "you: no thank you\nnova: ok.\n" +
-    "you: can you do math\nnova: two plus two is four.\n" +
-    "you: what is two plus two\nnova: four.\n" +
-    "you: what is one plus one\nnova: two.\n" +
-    "you: what is your name\nnova: nova.\n" +
-    "you: goodbye\nnova: bye.\n";
+    "the cat sat on the mat. the dog ran in the park. " +
+    "i am nova. i live on this phone. i am still learning english. " +
+    "hello. hey. hi. goodbye. bye. thanks. you are welcome. " +
+    "the sun is hot. the night is dark. water is wet. fire is hot. " +
+    "one plus one is two. two plus two is four. three plus three is six. " +
+    "i see a red light. stop. i see a green light. go. " +
+    "people talk with words. words make sentences. sentences make meaning. " +
+    "i can say yes. i can say no. i can say i do not know. " +
+    "this is a small brain. it reads letters. it tries the next letter. " +
+    "if you talk to me, i hear the words you type. ";
 
   function fixedVocab() {
     var stoi = {};
@@ -97,12 +96,7 @@
     onUpdate: null
   };
 
-  var work = {
-    h: f32(H),
-    logits: null,
-    p: null,
-    dlog: null
-  };
+  var work = { h: f32(H), logits: null, p: null, dlog: null };
 
   function ensureWork() {
     var v = trainer.vocab.n;
@@ -201,16 +195,22 @@
     var i;
     for (i = 0; i < trainer.lessons.length; i++) {
       extra += pairText(trainer.lessons[i].user, trainer.lessons[i].nova);
-      extra += pairText(trainer.lessons[i].user, trainer.lessons[i].nova);
     }
     try {
       var st = JSON.parse(localStorage.getItem("nova-local-v1") || "{}");
       var k;
       if (st.memories) {
-        for (k in st.memories) extra += pairText("what is " + k, st.memories[k]);
+        for (k in st.memories) extra += " " + sanitize(k) + " is " + sanitize(st.memories[k]) + ".";
+      }
+      if (st.conversations) {
+        st.conversations.forEach(function (c) {
+          (c.messages || []).forEach(function (msg) {
+            if (msg.role === "user") extra += " " + sanitize(msg.content) + ".";
+          });
+        });
       }
     } catch (e) {}
-    return sanitize(BASE_TEXT + BASE_TEXT + extra);
+    return sanitize(BASE_TEXT + " " + extra);
   }
 
   function prepare() {
@@ -382,7 +382,7 @@
     trainer.lastPersist = 0;
     persist();
     burst();
-    return "Training v4. Learns the seed list plus your fix / when I say lessons. Keep Nova on screen.";
+    return "Training v4 on English text plus your messages. Words come from data, not from my old replies.";
   }
 
   function pause(reason) {
@@ -453,13 +453,13 @@
   }
 
   function sample(n) {
-    return generate("you: hello\nnova: ", n || 20, 0.4) || "(no brain yet)";
+    return generate("the ", n || 40, 0.7) || "(no brain yet)";
   }
 
   function talk(userText) {
     var seed = "you: " + sanitize(userText) + "\nnova: ";
-    var out = generate(seed, 40, 0);
-    if (!out) return "still learning. train me, or type: when I say hi say hey";
+    var out = generate(seed, 40, 0.4);
+    if (!out) return "still learning.";
     return out;
   }
 
@@ -468,26 +468,20 @@
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
     var m;
-
     m = lower.match(/^fix[:\s]+(.+)$/);
     if (m && lastUser) {
       addLesson(lastUser, m[1]);
-      return "learned. when you say \"" + sanitize(lastUser) + "\" I practice \"" + sanitize(m[1]) + "\".";
+      return "learned \"" + sanitize(m[1]) + "\".";
     }
     m = lower.match(/^no[,:]\s*(.+)$/);
     if (m && lastUser) {
       addLesson(lastUser, m[1]);
-      return "got it. corrected to \"" + sanitize(m[1]) + "\".";
+      return "corrected to \"" + sanitize(m[1]) + "\".";
     }
     m = lower.match(/^when i say (.+?) say (.+)$/);
     if (m) {
       addLesson(m[1], m[2]);
-      return "lesson saved: \"" + sanitize(m[1]) + "\" -> \"" + sanitize(m[2]) + "\".";
-    }
-    m = lower.match(/^say (.+?) when i say (.+)$/);
-    if (m) {
-      addLesson(m[2], m[1]);
-      return "lesson saved: \"" + sanitize(m[2]) + "\" -> \"" + sanitize(m[1]) + "\".";
+      return "lesson saved.";
     }
     return null;
   }
@@ -507,7 +501,7 @@
 
   function exportBrain() {
     persist();
-    return "Exported v4 (" + (trainer.model ? trainer.model.steps : 0) + " steps, " + trainer.lessons.length + " lessons).";
+    return "Exported v4 (" + (trainer.model ? trainer.model.steps : 0) + " steps).";
   }
 
   document.addEventListener("visibilitychange", function () {
