@@ -45,7 +45,7 @@ function render() {
   if (!state.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova</h2><p>Local only. Tiny on-phone training is optional and careful.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train a little</button><button class=\"chip\" data-fill=\"pause\">Pause</button><button class=\"chip\" data-fill=\"sample\">Sample</button></div>";
+    empty.innerHTML = "<h2>Nova</h2><p>Local only. Tiny on-phone training is optional and careful.</p><div class=\"chips\"><button class=\"chip\" data-fill=\"train\">Train a little</button><button class=\"chip\" data-fill=\"pause\">Pause</button><button class=\"chip\" data-fill=\"export brain\">Export brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-fill]").forEach(function (btn) {
       btn.onclick = function () {
@@ -110,6 +110,9 @@ function reply(text) {
   if (T && (lower === "sample" || lower === "speak brain")) {
     return "Tiny brain sample (expect nonsense at first):\n" + T.sample(50);
   }
+  if (T && (lower === "export brain" || lower === "export")) {
+    return T.exportBrain();
+  }
   if (T && (lower === "reset brain" || lower === "wipe brain")) {
     return T.reset();
   }
@@ -123,12 +126,12 @@ function reply(text) {
 
   if (["hi", "hey", "hello", "yo", "sup"].indexOf(lower) !== -1) {
     return name
-      ? "Hey " + name + ". Nova is here, local only. What do you want to do?"
-      : "Hey. I'm Nova. Local only. Say train to learn a little on this phone, carefully.";
+      ? "Hey " + name + ". Nova is here, local only."
+      : "Hey. I'm Nova. Local only. Say train, pause, or export brain.";
   }
 
   if (lower.indexOf("who are you") !== -1 || lower.indexOf("what are you") !== -1) {
-    return "I'm Nova. I run on this device. I can remember facts and optionally train a tiny CPU brain in short bursts. That brain will not become ChatGPT.";
+    return "I'm Nova. I run on this device.";
   }
 
   if (lower.indexOf("what do you know") !== -1 || lower.indexOf("what do you remember") !== -1 || lower === "memory") {
@@ -157,7 +160,7 @@ function reply(text) {
   }
 
   if (lower.indexOf("who am i") !== -1 || lower.indexOf("what do you know about me") !== -1) {
-    if (!memories.length) return "I don't know much yet. Say remember my name is ...";
+    if (!memories.length) return "I don't know much yet.";
     return "From local memory: " + memories.map(function (m) {
       return m.key + " is " + m.value;
     }).join(", ") + ".";
@@ -167,9 +170,9 @@ function reply(text) {
     ? "I already know: " + memories.slice(0, 4).map(function (m) {
         return m.key + " = " + m.value;
       }).join("; ") + "."
-    : "I don't have saved facts yet. Say remember my name is ... and I'll store it here.";
+    : "I don't have saved facts yet.";
 
-  return "I heard you. Local Nova can't reason like a full model yet, but I kept your message.\n\n" + known + "\n\nYou said: \"" + text + "\"";
+  return "I heard you.\n\n" + known + "\n\nYou said: \"" + text + "\"";
 }
 
 function send(text) {
