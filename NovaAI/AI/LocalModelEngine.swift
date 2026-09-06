@@ -17,7 +17,7 @@ struct MemoryFact: Sendable {
 }
 
 /// On-device stand-in until a real local model (MLX) or an API is added.
-/// No network. Personality + memory + a few tools only.
+/// No network. Personality + memory + a few local tools only.
 struct BootstrapModelEngine: LocalModelEngine {
     let displayName = "Nova Local"
 
@@ -72,10 +72,12 @@ struct BootstrapModelEngine: LocalModelEngine {
     }
 
     private func fallback(for text: String, memories: [MemoryFact]) -> String {
-        let known = memories.isEmpty
-            ? "I don't have any saved facts yet. Say \"remember my name is …\" and I'll store it on this phone."
-            : "I already know: \(memories.prefix(4).map { "\($0.key) = \($0.value)" }.joined(separator: "; "))."
-
+        let known: String
+        if memories.isEmpty {
+            known = "I don't have any saved facts yet. Say remember my name is ... and I'll store it on this phone."
+        } else {
+            known = "I already know: " + memories.prefix(4).map { "\($0.key) = \($0.value)" }.joined(separator: "; ") + "."
+        }
         return "I heard you. Local Nova can't reason like a full model yet, but I kept your message.\n\n\(known)\n\nYou said: \"\(text)\""
     }
 
@@ -83,8 +85,8 @@ struct BootstrapModelEngine: LocalModelEngine {
         guard !memories.isEmpty else {
             return "Local memory is empty. Say something like: remember my name is Alex."
         }
-        let lines = memories.map { • \($0.key): \($0.value)" }
-        return "Here's what I'm keeping on this device:\n\(lines.joined(separator: "\n"))"
+        let lines = memories.map { "- \($0.key): \($0.value)" }
+        return "Here's what I'm keeping on this device:\n" + lines.joined(separator: "\n")
     }
 
     private func value(for key: String, in memories: [MemoryFact]) -> String? {
@@ -93,7 +95,7 @@ struct BootstrapModelEngine: LocalModelEngine {
 
     private func identityLine(_ memories: [MemoryFact]) -> String? {
         guard !memories.isEmpty else { return nil }
-        return "From local memory: \(memories.map { "\($0.key) is \($0.value)" }.joined(separator: ", "))."
+        return "From local memory: " + memories.map { "\($0.key) is \($0.value)" }.joined(separator: ", ") + "."
     }
 
     private func isGreeting(_ lower: String) -> Bool {
