@@ -1,8 +1,9 @@
-/* Nova v6 main-thread trainer. Adam + LR decay + EMA loss + saved moments. */
+/* Nova v7 main-thread trainer. GRU-64 + Adam + LR decay + EMA loss. */
 (function (global) {
-  var H = 32, SEQ = 24, BASE_LR = 0.01, B1 = 0.9, B2 = 0.999;
-  var STEPS_PER_SEC = 40, TICK_MS = 40, PERSIST_MS = 2500;
-  var STORE = "nova-tiny-brain-v6";
+  var H = 64, SEQ = 48, BASE_LR = 0.01, B1 = 0.9, B2 = 0.999;
+  var STEPS_PER_SEC = 16, TICK_MS = 50, PERSIST_MS = 3000;
+  var STORE = "nova-tiny-brain-v7";
+  var OLD_STORE = "nova-tiny-brain-v6";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var BASE =
     "you: hello\nnova: hey.\n" +
@@ -11,8 +12,10 @@
     "you: who are you\nnova: i am nova.\n" +
     "you: how are you\nnova: i am here.\n" +
     "you: thanks\nnova: you are welcome.\n" +
+    "you: thank you\nnova: you are welcome.\n" +
     "the cat sat on the mat. hello. hey. thanks. you are welcome. " +
-    "one plus one is two. two plus two is four. i am nova. i am here. ";
+    "one plus one is two. two plus two is four. i am nova. i am here. " +
+    "i live on this phone. i am still learning english. ";
 
   var CANNED = [
     { user: "hello", nova: "hey." },
@@ -28,18 +31,36 @@
   for (i = 0; i < V; i++) stoi[ALPHA.charAt(i)] = i;
 
   function f32(n) { return new Float32Array(n); }
-  function randn(n) {
+  function randn(n, s) {
     var a = f32(n), i;
-    for (i = 0; i < n; i++) a[i] = (Math.random() - 0.5) * 0.12;
+    s = s == null ? 0.08 : s;
+    for (i = 0; i < n; i++) a[i] = (Math.random() - 0.5) * s;
     return a;
   }
+  function zeros(n) { return f32(n); }
 
-  var model = {
-    Wxh: randn(H * V), Whh: randn(H * H), Why: randn(V * H),
-    bh: f32(H), by: f32(V), steps: 0, loss: null, ema: null, kind: "rnn-v6", t: 0
-  };
-  var mW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
-  var vW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
+  function emptyModel() {
+    return {
+      Wxz: randn(H * V), Wxr: randn(H * V), Wxn: randn(H * V),
+      Uz: randn(H * H), Ur: randn(H * H), Un: randn(H * H),
+      bz: zeros(H), br: zeros(H), bn: zeros(H),
+      Why: randn(V * H), by: zeros(V),
+      steps: 0, loss: null, ema: null, kind: "gru-v7", t: 0
+    };
+  }
+  function emptyMoments() {
+    return {
+      Wxz: zeros(H * V), Wxr: zeros(H * V), Wxn: zeros(H * V),
+      Uz: zeros(H * H), Ur: zeros(H * H), Un: zeros(H * H),
+      bz: zeros(H), br: zeros(H), bn: zeros(H),
+      Why: zeros(V * H), by: zeros(V)
+    };
+  }
+
+  var KEYS = ["Wxz", "Wxr", "Wxn", "Uz", "Ur", "Un", "bz", "br", "bn", "Why", "by"];
+  var model = emptyModel();
+  var mW = emptyMoments();
+  var vW = emptyMoments();
 
   var trainer = {
     running: false, timer: null, startedAt: 0, sessionSteps: 0,
@@ -58,8 +79,8 @@
 
   function currentLr() {
     var s = model.steps;
-    if (s < 4000) return BASE_LR;
-    if (s < 12000) return 0.003;
+    if (s < 6000) return BASE_LR;
+    if (s < 18000) return 0.003;
     return 0.001;
   }
 
@@ -72,45 +93,43 @@
     return sanitize(BASE + " " + extra);
   }
 
-  function packMoments(bag) {
-    return {
-      Wxh: Array.from(bag.Wxh), Whh: Array.from(bag.Whh), Why: Array.from(bag.Why),
-      bh: Array.from(bag.bh), by: Array.from(bag.by)
-    };
+  function pack(bag) {
+    var o = {}, k;
+    for (k = 0; k < KEYS.length; k++) o[KEYS[k]] = Array.from(bag[KEYS[k]]);
+    return o;
   }
-
-  function loadMoments(target, src) {
-    if (!src) return;
-    if (src.Wxh) target.Wxh = Float32Array.from(src.Wxh);
-    if (src.Whh) target.Whh = Float32Array.from(src.Whh);
-    if (src.Why) target.Why = Float32Array.from(src.Why);
-    if (src.bh) target.bh = Float32Array.from(src.bh);
-    if (src.by) target.by = Float32Array.from(src.by);
+  function unpack(target, src) {
+    if (!src) return false;
+    var k;
+    for (k = 0; k < KEYS.length; k++) {
+      if (!src[KEYS[k]] || src[KEYS[k]].length !== target[KEYS[k]].length) return false;
+    }
+    for (k = 0; k < KEYS.length; k++) target[KEYS[k]] = Float32Array.from(src[KEYS[k]]);
+    return true;
   }
 
   function load() {
     try {
       var raw = localStorage.getItem(STORE);
-      if (!raw) raw = localStorage.getItem("nova-tiny-brain-v5");
-      if (!raw) return;
-      var p = JSON.parse(raw);
-      var mdl = p.model || p;
-      if (!mdl || !mdl.Wxh) return;
-      if (mdl.kind !== "rnn-v6" && mdl.kind !== "rnn-v5") return;
-      model.Wxh = Float32Array.from(mdl.Wxh);
-      model.Whh = Float32Array.from(mdl.Whh);
-      model.Why = Float32Array.from(mdl.Why);
-      model.bh = Float32Array.from(mdl.bh);
-      model.by = Float32Array.from(mdl.by);
-      model.steps = mdl.steps || 0;
-      model.loss = mdl.loss;
-      model.ema = mdl.ema != null ? mdl.ema : mdl.loss;
-      model.t = mdl.t || 0;
-      model.kind = "rnn-v6";
-      loadMoments(mW, p.mW || mdl.mW);
-      loadMoments(vW, p.vW || mdl.vW);
-      if (Array.isArray(p.lessons)) trainer.lessons = p.lessons;
-      if (p.reading) trainer.reading = p.reading;
+      var p = raw ? JSON.parse(raw) : null;
+      if (p && p.model && unpack(model, p.model)) {
+        model.steps = p.model.steps || 0;
+        model.loss = p.model.loss;
+        model.ema = p.model.ema != null ? p.model.ema : p.model.loss;
+        model.t = p.model.t || 0;
+        model.kind = "gru-v7";
+        unpack(mW, p.mW);
+        unpack(vW, p.vW);
+        if (Array.isArray(p.lessons)) trainer.lessons = p.lessons;
+        if (p.reading) trainer.reading = p.reading;
+        return;
+      }
+      var old = localStorage.getItem(OLD_STORE);
+      if (old) {
+        var o = JSON.parse(old);
+        if (Array.isArray(o.lessons)) trainer.lessons = o.lessons;
+        if (o.reading) trainer.reading = o.reading;
+      }
     } catch (e) {}
   }
 
@@ -118,12 +137,14 @@
     try {
       localStorage.setItem(STORE, JSON.stringify({
         model: {
-          kind: "rnn-v6", steps: model.steps, loss: model.loss, ema: model.ema, t: model.t,
-          Wxh: Array.from(model.Wxh), Whh: Array.from(model.Whh), Why: Array.from(model.Why),
-          bh: Array.from(model.bh), by: Array.from(model.by)
+          kind: "gru-v7", steps: model.steps, loss: model.loss, ema: model.ema, t: model.t,
+          Wxz: Array.from(model.Wxz), Wxr: Array.from(model.Wxr), Wxn: Array.from(model.Wxn),
+          Uz: Array.from(model.Uz), Ur: Array.from(model.Ur), Un: Array.from(model.Un),
+          bz: Array.from(model.bz), br: Array.from(model.br), bn: Array.from(model.bn),
+          Why: Array.from(model.Why), by: Array.from(model.by)
         },
-        mW: packMoments(mW),
-        vW: packMoments(vW),
+        mW: pack(mW),
+        vW: pack(vW),
         lessons: trainer.lessons,
         reading: trainer.reading
       }));
@@ -132,7 +153,7 @@
     } catch (e) {}
   }
 
-  function tanh(x) { return Math.tanh(x); }
+  function sigm(x) { return 1 / (1 + Math.exp(-Math.max(-20, Math.min(20, x)))); }
   function clip(x) { return x > 5 ? 5 : x < -5 ? -5 : x; }
 
   function softmax(a) {
@@ -143,18 +164,28 @@
     return o;
   }
 
-  function forwardChar(x, prev, h) {
-    var i, j;
+  function gruForward(x, prev, cache) {
+    var i, j, z, r, n, h = f32(H);
+    var zt = f32(H), rt = f32(H), nt = f32(H);
     for (i = 0; i < H; i++) {
-      var z = model.bh[i] + model.Wxh[i * V + x];
-      for (j = 0; j < H; j++) z += model.Whh[i * H + j] * prev[j];
-      h[i] = tanh(z);
+      z = model.bz[i] + model.Wxz[i * V + x];
+      r = model.br[i] + model.Wxr[i * V + x];
+      n = model.bn[i] + model.Wxn[i * V + x];
+      for (j = 0; j < H; j++) {
+        z += model.Uz[i * H + j] * prev[j];
+        r += model.Ur[i * H + j] * prev[j];
+      }
+      zt[i] = sigm(z);
+      rt[i] = sigm(r);
+      for (j = 0; j < H; j++) n += model.Un[i * H + j] * (rt[i] * prev[j]);
+      nt[i] = Math.tanh(n);
+      h[i] = (1 - zt[i]) * nt[i] + zt[i] * prev[i];
     }
+    if (cache) { cache.h = h; cache.z = zt; cache.r = rt; cache.n = nt; cache.prev = prev; cache.x = x; }
+    return h;
   }
 
-  function adam(arr, g, m, v) {
-    model.t += 1;
-    var lr = currentLr() * Math.sqrt(1 - Math.pow(B2, model.t)) / (1 - Math.pow(B1, model.t));
+  function adam(arr, g, m, v, lr) {
     var i;
     for (i = 0; i < arr.length; i++) {
       var gi = clip(g[i]);
@@ -174,56 +205,80 @@
       ys[t] = stoi[text.charAt(pos + t + 1)];
       if (xs[t] == null || ys[t] == null) return;
     }
+    var caches = new Array(SEQ);
     var hs = new Array(SEQ + 1);
     hs[0] = f32(H);
     var pList = new Array(SEQ);
     for (t = 0; t < SEQ; t++) {
-      hs[t + 1] = f32(H);
-      forwardChar(xs[t], hs[t], hs[t + 1]);
+      caches[t] = {};
+      hs[t + 1] = gruForward(xs[t], hs[t], caches[t]);
       var logits = f32(V), h = hs[t + 1];
       for (i = 0; i < V; i++) {
-        var z = model.by[i];
-        for (j = 0; j < H; j++) z += model.Why[i * H + j] * h[j];
-        logits[i] = z;
+        var zz = model.by[i];
+        for (j = 0; j < H; j++) zz += model.Why[i * H + j] * h[j];
+        logits[i] = zz;
       }
       pList[t] = softmax(logits);
     }
     var loss = 0;
     for (t = 0; t < SEQ; t++) loss += -Math.log(Math.max(pList[t][ys[t]], 1e-8));
     loss /= SEQ;
-    var dWxh = f32(H * V), dWhh = f32(H * H), dWhy = f32(V * H), dbh = f32(H), dby = f32(V), dhNext = f32(H);
+
+    var g = emptyMoments();
+    var dhNext = f32(H);
     for (t = SEQ - 1; t >= 0; t--) {
-      var p = pList[t], h = hs[t + 1], prev = hs[t], dlog = f32(V);
+      var p = pList[t], h = hs[t + 1], c = caches[t], dlog = f32(V);
       for (i = 0; i < V; i++) dlog[i] = p[i];
       dlog[ys[t]] -= 1;
       for (i = 0; i < V; i++) {
-        dby[i] += dlog[i];
-        for (j = 0; j < H; j++) dWhy[i * H + j] += dlog[i] * h[j];
+        g.by[i] += dlog[i];
+        for (j = 0; j < H; j++) g.Why[i * H + j] += dlog[i] * h[j];
       }
       var dh = f32(H);
       for (j = 0; j < H; j++) {
-        var g = dhNext[j];
-        for (i = 0; i < V; i++) g += model.Why[i * H + j] * dlog[i];
-        dh[j] = g * (1 - h[j] * h[j]);
+        var gg = dhNext[j];
+        for (i = 0; i < V; i++) gg += model.Why[i * H + j] * dlog[i];
+        dh[j] = gg;
       }
-      for (j = 0; j < H; j++) {
-        dbh[j] += dh[j];
-        dWxh[j * V + xs[t]] += dh[j];
-        for (k = 0; k < H; k++) dWhh[j * H + k] += dh[j] * prev[k];
+      var prev = c.prev, zt = c.z, rt = c.r, nt = c.n, x = c.x;
+      var dz = f32(H), dn = f32(H), dprev = f32(H);
+      for (i = 0; i < H; i++) {
+        dz[i] = dh[i] * (prev[i] - nt[i]);
+        dn[i] = dh[i] * (1 - zt[i]);
+        dprev[i] += dh[i] * zt[i];
+        var dnt = dn[i] * (1 - nt[i] * nt[i]);
+        var dzt = dz[i] * zt[i] * (1 - zt[i]);
+        g.bn[i] += dnt;
+        g.bz[i] += dzt;
+        g.Wxn[i * V + x] += dnt;
+        g.Wxz[i * V + x] += dzt;
+        var dri = 0;
+        for (k = 0; k < H; k++) dri += model.Un[i * H + k] * dnt * prev[k];
+        var drs = dri * rt[i] * (1 - rt[i]);
+        g.br[i] += drs;
+        g.Wxr[i * V + x] += drs;
+        for (k = 0; k < H; k++) {
+          g.Un[i * H + k] += dnt * (rt[i] * prev[k]);
+          g.Uz[i * H + k] += dzt * prev[k];
+          g.Ur[i * H + k] += drs * prev[k];
+          dprev[k] += model.Uz[i * H + k] * dzt;
+          dprev[k] += model.Ur[i * H + k] * drs;
+          dprev[k] += model.Un[i * H + k] * dnt * rt[i];
+        }
       }
-      for (k = 0; k < H; k++) {
-        var s = 0;
-        for (j = 0; j < H; j++) s += model.Whh[j * H + k] * dh[j];
-        dhNext[k] = s;
-      }
+      dhNext = dprev;
     }
-    var inv = 1 / SEQ, arrs = [dWxh, dWhh, dWhy, dbh, dby];
-    for (i = 0; i < arrs.length; i++) for (j = 0; j < arrs[i].length; j++) arrs[i][j] *= inv;
-    adam(model.Wxh, dWxh, mW.Wxh, vW.Wxh);
-    adam(model.Whh, dWhh, mW.Whh, vW.Whh);
-    adam(model.Why, dWhy, mW.Why, vW.Why);
-    adam(model.bh, dbh, mW.bh, vW.bh);
-    adam(model.by, dby, mW.by, vW.by);
+
+    var inv = 1 / SEQ, lr, b1t, b2t;
+    model.t += 1;
+    b1t = 1 - Math.pow(B1, model.t);
+    b2t = 1 - Math.pow(B2, model.t);
+    lr = currentLr() * Math.sqrt(b2t) / b1t;
+    for (i = 0; i < KEYS.length; i++) {
+      var arr = g[KEYS[i]];
+      for (j = 0; j < arr.length; j++) arr[j] *= inv;
+      adam(model[KEYS[i]], arr, mW[KEYS[i]], vW[KEYS[i]], lr);
+    }
     model.steps += 1;
     model.loss = loss;
     model.ema = model.ema == null ? loss : 0.98 * model.ema + 0.02 * loss;
@@ -238,7 +293,7 @@
     if (document.hidden) { pause("paused \u2014 keep Nova on screen"); return; }
     var now = Date.now();
     var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000) - trainer.sessionSteps;
-    if (due > 30) due = 30;
+    if (due > 12) due = 12;
     var i;
     for (i = 0; i < due; i++) stepOnce();
     if (due > 0) trainer.sessionSteps += due;
@@ -256,7 +311,7 @@
     persist();
     emit();
     burst();
-    return "Training v6 on this screen. LR decays after 4k / 12k steps. Button should say Stop.";
+    return "Training v7 GRU-64 on this screen. Fresh weights. LR decays after 6k / 18k steps. Button should say Stop.";
   }
 
   function pause(reason) {
@@ -265,19 +320,16 @@
     trainer.timer = null;
     persist();
     emit();
-    return reason || "Paused. v6 saved.";
+    return reason || "Paused. v7 saved.";
   }
 
   function generate(seed, maxLen, temp) {
     seed = sanitize(seed);
     if (!seed) seed = "you: hello\nnova: ";
-    var prev = f32(H), h = f32(H), t, i, j, out = "";
-    for (t = 0; t < seed.length; t++) {
-      forwardChar(stoi[seed.charAt(t)] || 0, prev, h);
-      prev.set(h);
-    }
+    var prev = f32(H), t, i, j, out = "";
+    for (t = 0; t < seed.length; t++) prev = gruForward(stoi[seed.charAt(t)] || 0, prev, null);
     var repeats = 0, last = "";
-    for (t = 0; t < (maxLen || 36); t++) {
+    for (t = 0; t < (maxLen || 40); t++) {
       var logits = f32(V);
       for (i = 0; i < V; i++) {
         var z = model.by[i];
@@ -297,8 +349,7 @@
       if (repeats >= 3 && ch !== " ") break;
       out += ch;
       last = ch;
-      forwardChar(idx, prev, h);
-      prev.set(h);
+      prev = gruForward(idx, prev, null);
     }
     return out.replace(/\s+/g, " ").trim();
   }
@@ -322,7 +373,7 @@
     for (i = trainer.lessons.length - 1; i >= 0; i--) {
       u = trainer.lessons[i].user;
       if (q === u || q.indexOf(u) !== -1 || u.indexOf(q) !== -1) return trainer.lessons[i].nova;
-    }
+      }
     for (i = 0; i < CANNED.length; i++) {
       if (q === CANNED[i].user || q === CANNED[i].user + "?" || q === CANNED[i].user + ".") {
         return CANNED[i].nova;
@@ -365,7 +416,7 @@
       lr: currentLr(),
       rate: STEPS_PER_SEC,
       lessons: trainer.lessons.length,
-      kind: "v6"
+      kind: "v7"
     };
   }
 
@@ -389,20 +440,24 @@
       return out;
     },
     handleUser: handleUser,
-    reset: function () { return "Type reset brain confirm to wipe v6."; },
+    reset: function () { return "Type reset brain confirm to wipe v7."; },
     resetConfirm: function () {
       pause();
       localStorage.removeItem(STORE);
-      model.Wxh = randn(H * V); model.Whh = randn(H * H); model.Why = randn(V * H);
-      model.bh = f32(H); model.by = f32(V); model.steps = 0; model.loss = null; model.ema = null; model.t = 0;
-      mW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
-      vW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
-      trainer.lessons = []; trainer.reading = "";
-      persist(); emit();
-      return "v6 wiped.";
+      model = emptyModel();
+      mW = emptyMoments();
+      vW = emptyMoments();
+      trainer.lessons = [];
+      trainer.reading = "";
+      persist();
+      emit();
+      return "v7 wiped.";
     },
     status: status,
-    exportBrain: function () { persist(); return "Saved v6 (" + model.steps + " steps, ema " + (model.ema == null ? "?" : model.ema.toFixed(2)) + ")."; },
+    exportBrain: function () {
+      persist();
+      return "Saved v7 (" + model.steps + " steps, ema " + (model.ema == null ? "?" : model.ema.toFixed(2)) + ").";
+    },
     onUpdate: function (fn) { trainer.onUpdate = fn; }
   };
 })(window);
