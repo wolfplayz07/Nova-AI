@@ -1,16 +1,28 @@
-/* Nova v5 main-thread trainer. Adam. No worker — iOS PWA workers were silent. */
+/* Nova v6 main-thread trainer. Adam + LR decay + EMA loss + saved moments. */
 (function (global) {
-  var H = 32, SEQ = 24, LR = 0.01, B1 = 0.9, B2 = 0.999;
+  var H = 32, SEQ = 24, BASE_LR = 0.01, B1 = 0.9, B2 = 0.999;
   var STEPS_PER_SEC = 40, TICK_MS = 40, PERSIST_MS = 2500;
-  var STORE = "nova-tiny-brain-v5";
+  var STORE = "nova-tiny-brain-v6";
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var BASE =
     "you: hello\nnova: hey.\n" +
     "you: hi\nnova: hey.\n" +
+    "you: hey\nnova: hey.\n" +
     "you: who are you\nnova: i am nova.\n" +
     "you: how are you\nnova: i am here.\n" +
+    "you: thanks\nnova: you are welcome.\n" +
     "the cat sat on the mat. hello. hey. thanks. you are welcome. " +
     "one plus one is two. two plus two is four. i am nova. i am here. ";
+
+  var CANNED = [
+    { user: "hello", nova: "hey." },
+    { user: "hi", nova: "hey." },
+    { user: "hey", nova: "hey." },
+    { user: "who are you", nova: "i am nova." },
+    { user: "how are you", nova: "i am here." },
+    { user: "thanks", nova: "you are welcome." },
+    { user: "thank you", nova: "you are welcome." }
+  ];
 
   var stoi = {}, itos = ALPHA.split(""), V = ALPHA.length, i;
   for (i = 0; i < V; i++) stoi[ALPHA.charAt(i)] = i;
@@ -24,7 +36,7 @@
 
   var model = {
     Wxh: randn(H * V), Whh: randn(H * H), Why: randn(V * H),
-    bh: f32(H), by: f32(V), steps: 0, loss: null, kind: "rnn-v5", t: 0
+    bh: f32(H), by: f32(V), steps: 0, loss: null, ema: null, kind: "rnn-v6", t: 0
   };
   var mW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
   var vW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
@@ -41,31 +53,64 @@
       ch = s.charAt(i);
       if (stoi[ch] != null) o += ch;
     }
-    return o;
+    return o.replace(/\s+/g, " ").trim();
+  }
+
+  function currentLr() {
+    var s = model.steps;
+    if (s < 4000) return BASE_LR;
+    if (s < 12000) return 0.003;
+    return 0.001;
   }
 
   function corpus() {
-    var extra = trainer.reading || "", i;
+    var extra = trainer.reading || "", i, L;
     for (i = 0; i < trainer.lessons.length; i++) {
-      extra += "you: " + trainer.lessons[i].user + "\nnova: " + trainer.lessons[i].nova + "\n";
+      L = "you: " + trainer.lessons[i].user + "\nnova: " + trainer.lessons[i].nova + "\n";
+      extra += L + L + L + L;
     }
     return sanitize(BASE + " " + extra);
+  }
+
+  function packMoments(bag) {
+    return {
+      Wxh: Array.from(bag.Wxh), Whh: Array.from(bag.Whh), Why: Array.from(bag.Why),
+      bh: Array.from(bag.bh), by: Array.from(bag.by)
+    };
+  }
+
+  function loadMoments(target, src) {
+    if (!src) return;
+    if (src.Wxh) target.Wxh = Float32Array.from(src.Wxh);
+    if (src.Whh) target.Whh = Float32Array.from(src.Whh);
+    if (src.Why) target.Why = Float32Array.from(src.Why);
+    if (src.bh) target.bh = Float32Array.from(src.bh);
+    if (src.by) target.by = Float32Array.from(src.by);
   }
 
   function load() {
     try {
       var raw = localStorage.getItem(STORE);
+      if (!raw) raw = localStorage.getItem("nova-tiny-brain-v5");
       if (!raw) return;
-      var p = JSON.parse(raw).model;
-      if (!p || p.kind !== "rnn-v5" || !p.Wxh) return;
-      model.Wxh = Float32Array.from(p.Wxh);
-      model.Whh = Float32Array.from(p.Whh);
-      model.Why = Float32Array.from(p.Why);
-      model.bh = Float32Array.from(p.bh);
-      model.by = Float32Array.from(p.by);
-      model.steps = p.steps || 0;
-      model.loss = p.loss;
-      model.t = p.t || 0;
+      var p = JSON.parse(raw);
+      var mdl = p.model || p;
+      if (!mdl || !mdl.Wxh) return;
+      if (mdl.kind !== "rnn-v6" && mdl.kind !== "rnn-v5") return;
+      model.Wxh = Float32Array.from(mdl.Wxh);
+      model.Whh = Float32Array.from(mdl.Whh);
+      model.Why = Float32Array.from(mdl.Why);
+      model.bh = Float32Array.from(mdl.bh);
+      model.by = Float32Array.from(mdl.by);
+      model.steps = mdl.steps || 0;
+      model.loss = mdl.loss;
+      model.ema = mdl.ema != null ? mdl.ema : mdl.loss;
+      model.t = mdl.t || 0;
+      model.kind = "rnn-v6";
+      loadMoments(mW, p.mW || mdl.mW);
+      loadMoments(vW, p.vW || mdl.vW);
+      if (Array.isArray(p.lessons)) trainer.lessons = p.lessons;
+      if (p.reading) trainer.reading = p.reading;
     } catch (e) {}
   }
 
@@ -73,10 +118,14 @@
     try {
       localStorage.setItem(STORE, JSON.stringify({
         model: {
-          kind: "rnn-v5", steps: model.steps, loss: model.loss, t: model.t,
+          kind: "rnn-v6", steps: model.steps, loss: model.loss, ema: model.ema, t: model.t,
           Wxh: Array.from(model.Wxh), Whh: Array.from(model.Whh), Why: Array.from(model.Why),
           bh: Array.from(model.bh), by: Array.from(model.by)
-        }
+        },
+        mW: packMoments(mW),
+        vW: packMoments(vW),
+        lessons: trainer.lessons,
+        reading: trainer.reading
       }));
       trainer.lastPersist = Date.now();
       if (global.NovaIDB && NovaIDB.backup) NovaIDB.backup();
@@ -105,7 +154,8 @@
 
   function adam(arr, g, m, v) {
     model.t += 1;
-    var i, lr = LR * Math.sqrt(1 - Math.pow(B2, model.t)) / (1 - Math.pow(B1, model.t));
+    var lr = currentLr() * Math.sqrt(1 - Math.pow(B2, model.t)) / (1 - Math.pow(B1, model.t));
+    var i;
     for (i = 0; i < arr.length; i++) {
       var gi = clip(g[i]);
       m[i] = B1 * m[i] + (1 - B1) * gi;
@@ -176,6 +226,7 @@
     adam(model.by, dby, mW.by, vW.by);
     model.steps += 1;
     model.loss = loss;
+    model.ema = model.ema == null ? loss : 0.98 * model.ema + 0.02 * loss;
   }
 
   function emit() {
@@ -184,7 +235,7 @@
 
   function burst() {
     if (!trainer.running) return;
-    if (document.hidden) { pause("paused — keep Nova on screen"); return; }
+    if (document.hidden) { pause("paused \u2014 keep Nova on screen"); return; }
     var now = Date.now();
     var due = Math.floor((now - trainer.startedAt) * STEPS_PER_SEC / 1000) - trainer.sessionSteps;
     if (due > 30) due = 30;
@@ -205,7 +256,7 @@
     persist();
     emit();
     burst();
-    return "Training v5 on this screen (Adam). Button should say Stop. Steps should rise.";
+    return "Training v6 on this screen. LR decays after 4k / 12k steps. Button should say Stop.";
   }
 
   function pause(reason) {
@@ -214,7 +265,7 @@
     trainer.timer = null;
     persist();
     emit();
-    return reason || "Paused. v5 saved.";
+    return reason || "Paused. v6 saved.";
   }
 
   function generate(seed, maxLen, temp) {
@@ -225,6 +276,7 @@
       forwardChar(stoi[seed.charAt(t)] || 0, prev, h);
       prev.set(h);
     }
+    var repeats = 0, last = "";
     for (t = 0; t < (maxLen || 36); t++) {
       var logits = f32(V);
       for (i = 0; i < V; i++) {
@@ -241,37 +293,80 @@
       }
       var ch = itos[idx];
       if (ch === "\n") break;
+      if (ch === last) repeats += 1; else repeats = 0;
+      if (repeats >= 3 && ch !== " ") break;
       out += ch;
+      last = ch;
       forwardChar(idx, prev, h);
       prev.set(h);
     }
-    return out.trim();
+    return out.replace(/\s+/g, " ").trim();
+  }
+
+  function looksGibberish(s) {
+    if (!s || s.length < 2) return true;
+    var words = s.split(" ").filter(Boolean);
+    if (!words.length) return true;
+    var good = 0, i, w;
+    for (i = 0; i < words.length; i++) {
+      w = words[i];
+      if (w.length >= 3) good += 1;
+      else if (w === "i" || w === "a" || w === "am") good += 1;
+    }
+    return good < Math.max(1, Math.ceil(words.length * 0.45));
+  }
+
+  function lookupReply(text) {
+    var q = sanitize(text);
+    var i, u;
+    for (i = trainer.lessons.length - 1; i >= 0; i--) {
+      u = trainer.lessons[i].user;
+      if (q === u || q.indexOf(u) !== -1 || u.indexOf(q) !== -1) return trainer.lessons[i].nova;
+    }
+    for (i = 0; i < CANNED.length; i++) {
+      if (q === CANNED[i].user || q === CANNED[i].user + "?" || q === CANNED[i].user + ".") {
+        return CANNED[i].nova;
+      }
+    }
+    return null;
   }
 
   function handleUser(text, lastUser) {
     var raw = String(text || "").trim(), lower = raw.toLowerCase(), m;
     if (lower.indexOf("read ") === 0) {
-      trainer.reading = (trainer.reading + " " + sanitize(raw.slice(5))).slice(-20000);
+      trainer.reading = (trainer.reading + " " + sanitize(raw.slice(5))).slice(-8000);
       trainer.text = corpus();
+      persist();
       return "added reading.";
     }
     m = lower.match(/^fix[:\s]+(.+)$/) || lower.match(/^no[,:]\s*(.+)$/);
     if (m && lastUser) {
       trainer.lessons.push({ user: sanitize(lastUser), nova: sanitize(m[1]) });
       trainer.text = corpus();
+      persist();
       return "lesson saved.";
     }
     m = lower.match(/^when i say (.+?) say (.+)$/);
     if (m) {
       trainer.lessons.push({ user: sanitize(m[1]), nova: sanitize(m[2]) });
       trainer.text = corpus();
+      persist();
       return "lesson saved.";
     }
     return null;
   }
 
   function status() {
-    return { running: trainer.running, steps: model.steps, loss: model.loss, rate: STEPS_PER_SEC, lessons: trainer.lessons.length };
+    return {
+      running: trainer.running,
+      steps: model.steps,
+      loss: model.ema != null ? model.ema : model.loss,
+      raw: model.loss,
+      lr: currentLr(),
+      rate: STEPS_PER_SEC,
+      lessons: trainer.lessons.length,
+      kind: "v6"
+    };
   }
 
   load();
@@ -286,19 +381,28 @@
     pause: pause,
     toggle: function () { return trainer.running ? pause() : start(); },
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
-    talk: function (t) { return generate("you: " + sanitize(t) + "\nnova: ", 36, 0) || "still learning."; },
+    talk: function (t) {
+      var hit = lookupReply(t);
+      if (hit) return hit;
+      var out = generate("you: " + sanitize(t) + "\nnova: ", 28, 0);
+      if (looksGibberish(out)) return "still learning. train more, or teach me: when i say " + sanitize(t) + " say ...";
+      return out;
+    },
     handleUser: handleUser,
-    reset: function () { return "Type reset brain confirm to wipe v5."; },
+    reset: function () { return "Type reset brain confirm to wipe v6."; },
     resetConfirm: function () {
       pause();
       localStorage.removeItem(STORE);
       model.Wxh = randn(H * V); model.Whh = randn(H * H); model.Why = randn(V * H);
-      model.bh = f32(H); model.by = f32(V); model.steps = 0; model.loss = null; model.t = 0;
+      model.bh = f32(H); model.by = f32(V); model.steps = 0; model.loss = null; model.ema = null; model.t = 0;
+      mW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
+      vW = { Wxh: f32(H * V), Whh: f32(H * H), Why: f32(V * H), bh: f32(H), by: f32(V) };
+      trainer.lessons = []; trainer.reading = "";
       persist(); emit();
-      return "v5 wiped.";
+      return "v6 wiped.";
     },
     status: status,
-    exportBrain: function () { persist(); return "Saved v5 (" + model.steps + " steps)."; },
+    exportBrain: function () { persist(); return "Saved v6 (" + model.steps + " steps, ema " + (model.ema == null ? "?" : model.ema.toFixed(2)) + ")."; },
     onUpdate: function (fn) { trainer.onUpdate = fn; }
   };
 })(window);
