@@ -2,7 +2,14 @@
 (function (global) {
   var DB = "nova-idb-v1";
   var STORE = "kv";
-  var KEYS = ["nova-tiny-brain-v4", "nova-lessons-v4", "nova-read-v4"];
+  var KEYS = [
+    "nova-tiny-brain-v7",
+    "nova-tiny-brain-v6",
+    "nova-tiny-brain-v5",
+    "nova-tiny-brain-v4",
+    "nova-lessons-v4",
+    "nova-read-v4"
+  ];
 
   function openDb() {
     return new Promise(function (resolve, reject) {
