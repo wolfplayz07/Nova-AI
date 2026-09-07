@@ -116,11 +116,12 @@ function setStatus(st) {
   syncTrainUi(st);
   if (st && st.running) {
     var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
-    statusEl.textContent = "v4 " + st.steps + loss;
+    statusEl.textContent = "v6 " + st.steps + loss;
   } else if (st && st.steps) {
-    statusEl.textContent = "paused \u00b7 " + st.steps + " steps";
+    var pausedLoss = st.loss == null ? "" : " \u00b7 loss " + st.loss.toFixed(2);
+    statusEl.textContent = "paused \u00b7 " + st.steps + " steps" + pausedLoss;
   } else {
-    statusEl.textContent = "v4 brain";
+    statusEl.textContent = "v6 brain";
   }
 }
 
@@ -144,7 +145,7 @@ function runBrain(act) {
   else if (act === "sample") note("Tiny brain sample:\n" + T.sample(50));
   else if (act === "status") {
     var st = T.status();
-    note("Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss + ". Lessons: " + (st.lessons || 0));
+    note("Running: " + st.running + ". Steps: " + st.steps + ". Loss (smooth): " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0));
   } else if (act === "export") note(T.exportBrain());
 }
 
@@ -296,7 +297,7 @@ function render() {
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova v4</h2><p>Paste <b>read ...</b> or a webpage link. I cannot watch video or see pictures.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova v6</h2><p>Paste <b>read ...</b> or a webpage link. I cannot watch video or see pictures.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-act]").forEach(function (btn) {
       btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
@@ -353,7 +354,7 @@ function reply(text) {
   if (T && (lower === "reset brain" || lower === "wipe brain")) return T.reset();
   if (T && (lower === "train status" || lower === "brain status")) {
     var st = T.status();
-    return "Running: " + st.running + ". Steps: " + st.steps + ". Loss: " + st.loss;
+    return "Running: " + st.running + ". Steps: " + st.steps + ". Smooth loss: " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0);
   }
   if (/\.(jpg|jpeg|png|gif|webp|heic|mp4|mov|webm|m4v)(\?|$)/i.test(text)) {
     return "I only eat letters. I cannot see pictures or watch video. Copy the words and send: read those words";
