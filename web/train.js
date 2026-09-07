@@ -373,7 +373,7 @@
     for (i = trainer.lessons.length - 1; i >= 0; i--) {
       u = trainer.lessons[i].user;
       if (q === u || q.indexOf(u) !== -1 || u.indexOf(q) !== -1) return trainer.lessons[i].nova;
-      }
+    }
     for (i = 0; i < CANNED.length; i++) {
       if (q === CANNED[i].user || q === CANNED[i].user + "?" || q === CANNED[i].user + ".") {
         return CANNED[i].nova;
@@ -456,7 +456,24 @@
     status: status,
     exportBrain: function () {
       persist();
-      return "Saved v7 (" + model.steps + " steps, ema " + (model.ema == null ? "?" : model.ema.toFixed(2)) + ").";
+      var raw = localStorage.getItem(STORE) || "{}";
+      var name = "nova-v7-" + model.steps + ".json";
+      var blob = new Blob([raw], { type: "application/json" });
+      var file, url, a;
+      try { file = new File([blob], name, { type: "application/json" }); } catch (e) { file = null; }
+      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ title: "Nova v7 brain", text: name, files: [file] }).catch(function () {});
+        return "Share sheet opened. Tap Save to Files for " + name + ".";
+      }
+      url = URL.createObjectURL(blob);
+      a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 2000);
+      return "Saving " + name + " (" + model.steps + " steps). If no file appears, open Nova in Safari and Export again.";
     },
     onUpdate: function (fn) { trainer.onUpdate = fn; }
   };
