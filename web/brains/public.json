@@ -1,8 +1,14 @@
 {
-  "id": "nova-public-v0",
-  "status": "placeholder",
-  "note": "No public reasoner yet. When a snapshot is ready, replace this file. Do not put personal memory here.",
-  "updated": "2026-09-06",
-  "model": null,
-  "vocab": null
+  "id": "nova-v7-9320",
+  "status": "current",
+  "kind": "gru-v7",
+  "steps": 9320,
+  "loss": 0.2897471410944544,
+  "ema": 0.2723295538177027,
+  "hidden": 64,
+  "vocab": 44,
+  "lessons": 33,
+  "file": "current.json",
+  "note": "On-device GRU brain. Fresh phones load current.json. Keep personal diary facts off this file.",
+  "updated": "2026-09-07"
 }
