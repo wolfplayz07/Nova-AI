@@ -435,9 +435,7 @@
     talk: function (t) {
       var hit = lookupReply(t);
       if (hit) return hit;
-      var out = generate("you: " + sanitize(t) + "\nnova: ", 28, 0);
-      if (looksGibberish(out)) return "still learning. train more, or teach me: when i say " + sanitize(t) + " say ...";
-      return out;
+      return "i do not know.";
     },
     handleUser: handleUser,
     reset: function () { return "Type reset brain confirm to wipe v7."; },
