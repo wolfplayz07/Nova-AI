@@ -167,6 +167,7 @@
 
   function unknownTerm(text) {
     var q = sanitize(text);
+    if (/\bmy\b/.test(q) && /definition|meaning/.test(q)) return null;
     var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean)?$/);
     if (!m) return null;
     var word = m[1].replace(/^a |^an |^the /, "").replace(/\s+mean$/, "").trim();
@@ -175,12 +176,17 @@
     return word;
   }
 
-  function lookupFact(text) {
+  function userAskWord(text) {
     var q = sanitize(text);
-    var mine = q.match(/^(?:my|my definition of|what do i mean by)\s+(.+)$/);
+    var m = q.match(/^(?:my|my definition of|my meaning of|what do i mean by|what is my definition of|what is my meaning of)\s+(.+)$/);
+    if (!m) return null;
+    return m[1].replace(/^a |^an |^the /, "").replace(/\s+mean$/, "").trim();
+  }
+
+  function lookupFact(text) {
+    var mine = userAskWord(text);
     if (mine) {
-      var w = mine[1].replace(/^a |^an |^the /, "").trim();
-      var e = entryFor(w);
+      var e = entryFor(mine);
       return e.user || null;
     }
     var word = unknownTerm(text);
