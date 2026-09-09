@@ -5,6 +5,17 @@
     return String(Math.round(n * 1e6) / 1e6) + ".";
   }
 
+  function percentOf(text) {
+    var q = String(text || "").toLowerCase();
+    q = q.replace(/[?!,'\u2019]/g, " ");
+    q = q.replace(/\s+/g, " ").trim();
+    var m = q.match(/(?:what\s+is|whats|what's|how much is)?\s*(-?\d+(?:\.\d+)?)\s*(?:%|percent|pct)\s+of\s+(-?\d+(?:\.\d+)?)/i);
+    if (!m) return null;
+    var n = parseFloat(m[1]) / 100 * parseFloat(m[2]);
+    var out = fmt(n);
+    return out || null;
+  }
+
   function strip(text) {
     var q = String(text || "").toLowerCase();
     q = q.replace(/[?!,'\u2019=]/g, " ");
@@ -30,11 +41,7 @@
   }
 
   function specials(q) {
-    var m, a, b;
-    m = q.match(/^(-?\d+(?:\.\d+)?)\s*%\s*of\s*(-?\d+(?:\.\d+)?)$/);
-    if (m) return parseFloat(m[1]) / 100 * parseFloat(m[2]);
-    m = q.match(/^(-?\d+(?:\.\d+)?)\s*percent of\s*(-?\d+(?:\.\d+)?)$/);
-    if (m) return parseFloat(m[1]) / 100 * parseFloat(m[2]);
+    var m, a;
     m = q.match(/^(?:square root|sqrt)\s+(?:of\s+)?(-?\d+(?:\.\d+)?)$/);
     if (m) {
       a = parseFloat(m[1]);
@@ -42,10 +49,7 @@
       return Math.sqrt(a);
     }
     m = q.match(/^(-?\d+(?:\.\d+)?)\s+squared$/);
-    if (m) {
-      a = parseFloat(m[1]);
-      return a * a;
-    }
+    if (m) return parseFloat(m[1]) * parseFloat(m[1]);
     m = q.match(/^(-?\d+(?:\.\d+)?)\s+cubed$/);
     if (m) {
       a = parseFloat(m[1]);
@@ -64,7 +68,7 @@
     var s = q.replace(/\s+/g, "");
     var out = [];
     var i = 0;
-    var ch, num, next;
+    var ch, num;
     while (i < s.length) {
       ch = s.charAt(i);
       if ((ch === "+" || ch === "-") && (out.length === 0 || (out[out.length - 1] !== ")" && isNaN(out[out.length - 1])))) {
@@ -110,7 +114,7 @@
     var b = nums.pop();
     var a = nums.pop();
     if (a == null || b == null || op == null) return false;
-    if (op === "+" ) nums.push(a + b);
+    if (op === "+") nums.push(a + b);
     else if (op === "-") nums.push(a - b);
     else if (op === "*") nums.push(a * b);
     else if (op === "/") {
@@ -124,8 +128,7 @@
   function evalTokens(tokens) {
     var nums = [];
     var ops = [];
-    var t, r;
-    var i;
+    var t, r, i;
     for (i = 0; i < tokens.length; i++) {
       t = tokens[i];
       if (typeof t === "number") {
@@ -164,6 +167,8 @@
   }
 
   function novaMath(text) {
+    var pct = percentOf(text);
+    if (pct) return pct;
     var q = strip(text);
     if (!q) return null;
     var spec = specials(q);
@@ -173,9 +178,8 @@
       return out || null;
     }
     q = wordsToOps(q);
-    if (!/[0-9]/.test(q) || !/[+\-*/^x()]/.test(q) && !/\d\s+[+\-*/^]/.test(q) && q.indexOf("+") < 0 && q.indexOf("-") < 0 && q.indexOf("*") < 0 && q.indexOf("/") < 0 && q.indexOf("^") < 0) {
-      return null;
-    }
+    if (!/[0-9]/.test(q)) return null;
+    if (q.indexOf("+") < 0 && q.indexOf("-") < 0 && q.indexOf("*") < 0 && q.indexOf("/") < 0 && q.indexOf("^") < 0) return null;
     var tokens = tokenize(q);
     if (!tokens || tokens.length < 3) return null;
     var val = evalTokens(tokens);
