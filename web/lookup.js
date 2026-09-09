@@ -1,8 +1,9 @@
-/* Rule table first. Questions with no rule do not hit the GRU. */
+/* Rule table first. Unknown what-is terms ask the user, then save. */
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
   var FACTS = "nova-facts-v1";
+  var PENDING = "nova-pending-teach-v1";
   var stoi = {};
   var i;
   for (i = 0; i < ALPHA.length; i++) stoi[ALPHA.charAt(i)] = i;
@@ -96,6 +97,20 @@
     return map[word] || null;
   }
 
+  function getPending() {
+    try { return JSON.parse(localStorage.getItem(PENDING) || "null"); }
+    catch (e) { return null; }
+  }
+
+  function setPending(word) {
+    try { localStorage.setItem(PENDING, JSON.stringify({ word: word, at: Date.now() })); }
+    catch (e) {}
+  }
+
+  function clearPending() {
+    try { localStorage.removeItem(PENDING); } catch (e) {}
+  }
+
   function allPairs() {
     return lessonsFromStore().concat(CANNED);
   }
@@ -127,14 +142,20 @@
     return bestKey ? answers[bestKey] : null;
   }
 
-  function lookupFact(text) {
+  function unknownTerm(text) {
     var q = sanitize(text);
-    var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean|\s+mean\s+mean)?$/);
-    if (!m) m = q.match(/^define\s+(.+)$/);
+    var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean)?$/);
     if (!m) return null;
-    var word = m[1].replace(/\s+mean$/, "").replace(/^a |^an |^the /, "").trim();
-    var hit = factFor(word);
-    return hit || null;
+    var word = m[1].replace(/^a |^an |^the /, "").replace(/\s+mean$/, "").trim();
+    if (!word || word.split(" ").length > 4) return null;
+    if (/^(your name|you|this|that|it)$/.test(word)) return null;
+    return word;
+  }
+
+  function lookupFact(text) {
+    var word = unknownTerm(text);
+    if (!word) return null;
+    return factFor(word);
   }
 
   function num(s) {
@@ -200,7 +221,37 @@
     return "saved " + added + " word" + (added === 1 ? "" : "s") + ".";
   }
 
+  function cancelPending(text) {
+    var q = sanitize(text);
+    return /^(skip|nevermind|never mind|no|stop|cancel|forget it)$/.test(q);
+  }
+
+  function finishPending(text) {
+    var pend = getPending();
+    if (!pend || !pend.word) return null;
+    if (Date.now() - (pend.at || 0) > 10 * 60 * 1000) {
+      clearPending();
+      return null;
+    }
+    if (cancelPending(text)) {
+      clearPending();
+      return "ok. skipped.";
+    }
+    if (looksLikeQuestion(text) || /^when i say /.test(sanitize(text)) || /^read /.test(sanitize(text))) {
+      clearPending();
+      return null;
+    }
+    if (saveFact(pend.word, text)) {
+      clearPending();
+      return "saved. " + pend.word + " means " + sanitize(text) + ".";
+    }
+    clearPending();
+    return null;
+  }
+
   function handleTeach(text) {
+    var pendingDone = finishPending(text);
+    if (pendingDone) return pendingDone;
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
     var m = lower.match(/^when i say (.+?) say (.+)$/);
@@ -222,8 +273,15 @@
   }
 
   function ruleThenBrain(origTalk, text) {
+    var pendingDone = finishPending(text);
+    if (pendingDone) return pendingDone;
     var hit = mathAnswer(text) || lookup(text) || lookupFact(text);
     if (hit) return hit;
+    var term = unknownTerm(text);
+    if (term && !factFor(term) && !mathAnswer(text)) {
+      setPending(term);
+      return "i do not know " + term + ". what does it mean?";
+    }
     if (looksLikeQuestion(text)) return "i do not know.";
     if (typeof origTalk === "function") {
       var guessed = origTalk(text);
