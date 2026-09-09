@@ -1,4 +1,4 @@
-/* Rule table first, GRU second, I-do-not-know last. */
+/* Rule table first. Questions with no rule do not hit the GRU. */
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
@@ -113,6 +113,10 @@
   }
 
   function mathAnswer(text) {
+    if (global.novaMath) {
+      var fast = global.novaMath(text);
+      if (fast) return fast;
+    }
     var q = String(text || "").toLowerCase();
     q = q.replace(/[?!,]/g, " ").replace(/\s+/g, " ").trim();
     q = q.replace(/^what is /, "").replace(/^what's /, "").replace(/^whats /, "");
@@ -136,6 +140,13 @@
     return null;
   }
 
+  function looksLikeQuestion(text) {
+    var q = String(text || "").toLowerCase().trim();
+    if (!q) return false;
+    if (q.indexOf("?") !== -1) return true;
+    return /^(what|whats|who|where|when|why|how|can|could|do|does|did|is|are|am|should|would|will|which)\b/.test(q);
+  }
+
   function handleTeach(text) {
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
@@ -150,6 +161,7 @@
   function ruleThenBrain(origTalk, text) {
     var hit = mathAnswer(text) || lookup(text);
     if (hit) return hit;
+    if (looksLikeQuestion(text)) return "i do not know.";
     if (typeof origTalk === "function") {
       var guessed = origTalk(text);
       if (guessed && String(guessed).trim() && !/^still learning\.?$/i.test(String(guessed).trim())) {
