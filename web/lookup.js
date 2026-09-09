@@ -1,4 +1,4 @@
-/* Exact-then-longest lesson matcher + tiny calculator. */
+/* Rule table first, GRU second, I-do-not-know last. */
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
@@ -23,6 +23,7 @@
     { user: "can you hear me", nova: "yes." },
     { user: "good morning", nova: "good morning." },
     { user: "good night", nova: "good night." },
+    { user: "goodbye", nova: "bye." },
     { user: "bye", nova: "bye." },
     { user: "thanks", nova: "you are welcome." },
     { user: "thank you", nova: "you are welcome." },
@@ -69,27 +70,35 @@
     return Array.isArray(p.lessons) ? p.lessons : [];
   }
 
+  function allPairs() {
+    return lessonsFromStore().concat(CANNED);
+  }
+
   function lookup(text) {
     var q = sanitize(text);
     if (!q) return null;
-    var list = lessonsFromStore().concat(CANNED);
-    var n, u, best = null, bestLen = -1;
+    var list = allPairs();
+    var n, u;
     for (n = list.length - 1; n >= 0; n--) {
       u = sanitize(list[n].user);
       if (u && q === u) return list[n].nova;
     }
+    var counts = {};
+    var answers = {};
+    var key, bestKey = null, bestCount = 0;
     for (n = 0; n < list.length; n++) {
       u = sanitize(list[n].user);
       if (tooShort(u)) continue;
-      if (q.indexOf(u) !== -1 && u.length > bestLen) {
-        bestLen = u.length;
-        best = list[n].nova;
-      } else if (u.indexOf(q) !== -1 && q.length >= 8 && q.length > bestLen) {
-        bestLen = q.length;
-        best = list[n].nova;
+      if (q.indexOf(u) === -1 && !(u.indexOf(q) !== -1 && q.length >= 8)) continue;
+      key = u + "\0" + sanitize(list[n].nova);
+      counts[key] = (counts[key] || 0) + 1;
+      answers[key] = list[n].nova;
+      if (counts[key] > bestCount || (counts[key] === bestCount && u.length > (bestKey ? bestKey.split("\0")[0].length : 0))) {
+        bestCount = counts[key];
+        bestKey = key;
       }
     }
-    return best;
+    return bestKey ? answers[bestKey] : null;
   }
 
   function num(s) {
@@ -113,7 +122,7 @@
       { re: /^(-?\d+(?:\.\d+)?) (?:minus|-) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return a - b; } },
       { re: /^(-?\d+(?:\.\d+)?) (?:divided by|over|\/) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return b === 0 ? null : a / b; } }
     ];
-    var i, m, a, b, r;
+    var m, a, b, r;
     for (i = 0; i < ops.length; i++) {
       m = q.match(ops[i].re);
       if (!m) continue;
@@ -127,10 +136,6 @@
     return null;
   }
 
-  function reply(text) {
-    return mathAnswer(text) || lookup(text) || "i do not know.";
-  }
-
   function handleTeach(text) {
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
@@ -142,6 +147,18 @@
     return "lesson saved.";
   }
 
+  function ruleThenBrain(origTalk, text) {
+    var hit = mathAnswer(text) || lookup(text);
+    if (hit) return hit;
+    if (typeof origTalk === "function") {
+      var guessed = origTalk(text);
+      if (guessed && String(guessed).trim() && !/^still learning\.?$/i.test(String(guessed).trim())) {
+        return guessed;
+      }
+    }
+    return "i do not know.";
+  }
+
   function wrap() {
     if (!global.NovaTrain) {
       global.NovaTrain = {
@@ -150,7 +167,7 @@
         toggle: function () { return "Trainer script is missing."; },
         sample: function () { return "(trainer missing)"; },
         handleUser: handleTeach,
-        talk: function (t) { return reply(t); },
+        talk: function (t) { return ruleThenBrain(null, t); },
         status: function () {
           return { running: false, steps: 0, loss: null, lessons: lessonsFromStore().length };
         },
@@ -163,14 +180,15 @@
     if (global.NovaTrain._exactLookup) return;
     var T = global.NovaTrain;
     var origHandle = T.handleUser;
-    T.talk = function (t) { return reply(t); };
+    var origTalk = T.talk;
+    T.talk = function (t) { return ruleThenBrain(origTalk, t); };
     T.handleUser = function (text, lastUser) {
       var taught = handleTeach(text);
       if (taught) return taught;
       return origHandle ? origHandle(text, lastUser) : null;
     };
     T.lookup = lookup;
-    T._exactLookup: true;
+    T._exactLookup = true;
   }
 
   wrap();
