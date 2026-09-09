@@ -2,6 +2,7 @@
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
+  var FACTS = "nova-facts-v1";
   var stoi = {};
   var i;
   for (i = 0; i < ALPHA.length; i++) stoi[ALPHA.charAt(i)] = i;
@@ -70,6 +71,31 @@
     return Array.isArray(p.lessons) ? p.lessons : [];
   }
 
+  function readFacts() {
+    try { return JSON.parse(localStorage.getItem(FACTS) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+
+  function writeFacts(map) {
+    try { localStorage.setItem(FACTS, JSON.stringify(map)); } catch (e) {}
+  }
+
+  function saveFact(word, meaning) {
+    word = sanitize(word);
+    meaning = sanitize(meaning);
+    if (!word || !meaning || word.split(" ").length > 4) return false;
+    var map = readFacts();
+    map[word] = meaning.slice(0, 180);
+    writeFacts(map);
+    return true;
+  }
+
+  function factFor(word) {
+    var map = readFacts();
+    word = sanitize(word);
+    return map[word] || null;
+  }
+
   function allPairs() {
     return lessonsFromStore().concat(CANNED);
   }
@@ -99,6 +125,16 @@
       }
     }
     return bestKey ? answers[bestKey] : null;
+  }
+
+  function lookupFact(text) {
+    var q = sanitize(text);
+    var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean|\s+mean\s+mean)?$/);
+    if (!m) m = q.match(/^define\s+(.+)$/);
+    if (!m) return null;
+    var word = m[1].replace(/\s+mean$/, "").replace(/^a |^an |^the /, "").trim();
+    var hit = factFor(word);
+    return hit || null;
   }
 
   function num(s) {
@@ -144,22 +180,49 @@
     var q = String(text || "").toLowerCase().trim();
     if (!q) return false;
     if (q.indexOf("?") !== -1) return true;
-    return /^(what|whats|who|where|when|why|how|can|could|do|does|did|is|are|am|should|would|will|which)\b/.test(q);
+    return /^(what|whats|who|where|when|why|how|can|could|do|does|did|is|are|am|should|would|will|which|define)\b/.test(q);
+  }
+
+  function ingestRead(raw) {
+    var body = String(raw || "").replace(/^read\s+/i, "");
+    var lines = body.split(/[\n.;]+/);
+    var added = 0;
+    var n, line, m;
+    for (n = 0; n < lines.length; n++) {
+      line = sanitize(lines[n]);
+      if (!line) continue;
+      m = line.match(/^([a-z][a-z\- ]{0,24})\s+(?:means|is|:|-)\s+(.{8,180})$/);
+      if (!m) continue;
+      if (saveFact(m[1], m[2])) added++;
+      if (added >= 40) break;
+    }
+    if (!added) return null;
+    return "saved " + added + " word" + (added === 1 ? "" : "s") + ".";
   }
 
   function handleTeach(text) {
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
     var m = lower.match(/^when i say (.+?) say (.+)$/);
-    if (!m) return null;
-    var lessons = lessonsFromStore();
-    lessons.push({ user: sanitize(m[1]), nova: sanitize(m[2]) });
-    writeLessons(lessons);
-    return "lesson saved.";
+    if (m) {
+      var lessons = lessonsFromStore();
+      lessons.push({ user: sanitize(m[1]), nova: sanitize(m[2]) });
+      writeLessons(lessons);
+      return "lesson saved.";
+    }
+    m = lower.match(/^(?:define|teach)\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
+    if (m && saveFact(m[1], m[2])) return "saved.";
+    m = lower.match(/^(.+?)\s+means\s+(.+)$/);
+    if (m && m[1].split(/\s+/).length <= 4 && saveFact(m[1], m[2])) return "saved.";
+    if (/^read\s+/i.test(raw)) {
+      var got = ingestRead(raw);
+      return got || "no word lines found. use: cat means a small animal.";
+    }
+    return null;
   }
 
   function ruleThenBrain(origTalk, text) {
-    var hit = mathAnswer(text) || lookup(text);
+    var hit = mathAnswer(text) || lookup(text) || lookupFact(text);
     if (hit) return hit;
     if (looksLikeQuestion(text)) return "i do not know.";
     if (typeof origTalk === "function") {
