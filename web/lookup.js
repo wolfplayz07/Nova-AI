@@ -1,4 +1,4 @@
-/* Exact-then-longest lesson matcher. Works even if train.js fails to load. */
+/* Exact-then-longest lesson matcher + tiny calculator. */
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
@@ -32,8 +32,7 @@
     { user: "can you leave this phone", nova: "no. i only run here." },
     { user: "what can you do", nova: "i guess the next letter." },
     { user: "do you know everything", nova: "no." },
-    { user: "search the web", nova: "no. i only run here." },
-    { user: "what is 17 times 34", nova: "i do not know." }
+    { user: "search the web", nova: "no. i only run here." }
   ];
 
   var SHORT = { you: 1, are: 1, do: 1, no: 1, a: 1, i: 1, am: 1, the: 1, is: 1, to: 1 };
@@ -93,6 +92,45 @@
     return best;
   }
 
+  function num(s) {
+    if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+    var n = parseFloat(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function fmt(n) {
+    if (Math.abs(n - Math.round(n)) < 1e-10) return String(Math.round(n));
+    return String(Math.round(n * 1e6) / 1e6);
+  }
+
+  function mathAnswer(text) {
+    var q = String(text || "").toLowerCase();
+    q = q.replace(/[?!,]/g, " ").replace(/\s+/g, " ").trim();
+    q = q.replace(/^what is /, "").replace(/^what's /, "").replace(/^whats /, "");
+    var ops = [
+      { re: /^(-?\d+(?:\.\d+)?) (?:times|x|\*) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return a * b; } },
+      { re: /^(-?\d+(?:\.\d+)?) (?:plus|\+) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return a + b; } },
+      { re: /^(-?\d+(?:\.\d+)?) (?:minus|-) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return a - b; } },
+      { re: /^(-?\d+(?:\.\d+)?) (?:divided by|over|\/) (-?\d+(?:\.\d+)?)$/, fn: function (a, b) { return b === 0 ? null : a / b; } }
+    ];
+    var i, m, a, b, r;
+    for (i = 0; i < ops.length; i++) {
+      m = q.match(ops[i].re);
+      if (!m) continue;
+      a = num(m[1]);
+      b = num(m[2]);
+      if (a == null || b == null) return null;
+      r = ops[i].fn(a, b);
+      if (r == null) return "i cannot divide by zero.";
+      return fmt(r) + ".";
+    }
+    return null;
+  }
+
+  function reply(text) {
+    return mathAnswer(text) || lookup(text) || "i do not know.";
+  }
+
   function handleTeach(text) {
     var raw = String(text || "").trim();
     var lower = raw.toLowerCase();
@@ -112,7 +150,7 @@
         toggle: function () { return "Trainer script is missing."; },
         sample: function () { return "(trainer missing)"; },
         handleUser: handleTeach,
-        talk: function (t) { return lookup(t) || "i do not know."; },
+        talk: function (t) { return reply(t); },
         status: function () {
           return { running: false, steps: 0, loss: null, lessons: lessonsFromStore().length };
         },
@@ -125,14 +163,14 @@
     if (global.NovaTrain._exactLookup) return;
     var T = global.NovaTrain;
     var origHandle = T.handleUser;
-    T.talk = function (t) { return lookup(t) || "i do not know."; };
+    T.talk = function (t) { return reply(t); };
     T.handleUser = function (text, lastUser) {
       var taught = handleTeach(text);
       if (taught) return taught;
       return origHandle ? origHandle(text, lastUser) : null;
     };
     T.lookup = lookup;
-    T._exactLookup = true;
+    T._exactLookup: true;
   }
 
   wrap();
