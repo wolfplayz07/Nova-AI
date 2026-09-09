@@ -1,4 +1,4 @@
-/* Rule table first. Unknown what-is terms ask the user, then save. */
+/* Rule table first. User meanings are editable. Locked meanings are not. */
 (function (global) {
   var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
   var STORE = "nova-tiny-brain-v7";
@@ -81,20 +81,43 @@
     try { localStorage.setItem(FACTS, JSON.stringify(map)); } catch (e) {}
   }
 
-  function saveFact(word, meaning) {
+  function entryFor(word) {
+    var raw = readFacts()[sanitize(word)];
+    if (!raw) return { user: "", locked: "" };
+    if (typeof raw === "string") return { user: raw, locked: "" };
+    return { user: raw.user || "", locked: raw.locked || "" };
+  }
+
+  function putEntry(word, entry) {
     word = sanitize(word);
-    meaning = sanitize(meaning);
-    if (!word || !meaning || word.split(" ").length > 4) return false;
+    if (!word) return false;
     var map = readFacts();
-    map[word] = meaning.slice(0, 180);
+    map[word] = { user: entry.user || "", locked: entry.locked || "" };
     writeFacts(map);
     return true;
   }
 
-  function factFor(word) {
-    var map = readFacts();
+  function saveUser(word, meaning) {
     word = sanitize(word);
-    return map[word] || null;
+    meaning = sanitize(meaning).slice(0, 180);
+    if (!word || !meaning || word.split(" ").length > 4) return false;
+    var e = entryFor(word);
+    e.user = meaning;
+    return putEntry(word, e);
+  }
+
+  function saveLocked(word, meaning) {
+    word = sanitize(word);
+    meaning = sanitize(meaning).slice(0, 180);
+    if (!word || !meaning || word.split(" ").length > 4) return false;
+    var e = entryFor(word);
+    e.locked = meaning;
+    return putEntry(word, e);
+  }
+
+  function spokenMeaning(word) {
+    var e = entryFor(word);
+    return e.locked || e.user || "";
   }
 
   function getPending() {
@@ -153,9 +176,16 @@
   }
 
   function lookupFact(text) {
+    var q = sanitize(text);
+    var mine = q.match(/^(?:my|my definition of|what do i mean by)\s+(.+)$/);
+    if (mine) {
+      var w = mine[1].replace(/^a |^an |^the /, "").trim();
+      var e = entryFor(w);
+      return e.user || null;
+    }
     var word = unknownTerm(text);
     if (!word) return null;
-    return factFor(word);
+    return spokenMeaning(word) || null;
   }
 
   function num(s) {
@@ -214,7 +244,7 @@
       if (!line) continue;
       m = line.match(/^([a-z][a-z\- ]{0,24})\s+(?:means|is|:|-)\s+(.{8,180})$/);
       if (!m) continue;
-      if (saveFact(m[1], m[2])) added++;
+      if (saveUser(m[1], m[2])) added++;
       if (added >= 40) break;
     }
     if (!added) return null;
@@ -237,13 +267,13 @@
       clearPending();
       return "ok. skipped.";
     }
-    if (looksLikeQuestion(text) || /^when i say /.test(sanitize(text)) || /^read /.test(sanitize(text))) {
+    if (looksLikeQuestion(text) || /^when i say /.test(sanitize(text)) || /^read /.test(sanitize(text)) || /^lock /.test(sanitize(text))) {
       clearPending();
       return null;
     }
-    if (saveFact(pend.word, text)) {
+    if (saveUser(pend.word, text)) {
       clearPending();
-      return "saved. " + pend.word + " means " + sanitize(text) + ".";
+      return "saved your meaning of " + pend.word + ".";
     }
     clearPending();
     return null;
@@ -261,10 +291,16 @@
       writeLessons(lessons);
       return "lesson saved.";
     }
+    m = lower.match(/^lock\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
+    if (m && saveLocked(m[1], m[2])) return "locked " + sanitize(m[1]) + ".";
+    m = lower.match(/^edit\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
+    if (m) {
+      if (saveUser(m[1], m[2])) return "updated your meaning of " + sanitize(m[1]) + ".";
+    }
     m = lower.match(/^(?:define|teach)\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
-    if (m && saveFact(m[1], m[2])) return "saved.";
+    if (m && saveUser(m[1], m[2])) return "saved your meaning.";
     m = lower.match(/^(.+?)\s+means\s+(.+)$/);
-    if (m && m[1].split(/\s+/).length <= 4 && saveFact(m[1], m[2])) return "saved.";
+    if (m && m[1].split(/\s+/).length <= 4 && saveUser(m[1], m[2])) return "saved your meaning.";
     if (/^read\s+/i.test(raw)) {
       var got = ingestRead(raw);
       return got || "no word lines found. use: cat means a small animal.";
@@ -278,9 +314,9 @@
     var hit = mathAnswer(text) || lookup(text) || lookupFact(text);
     if (hit) return hit;
     var term = unknownTerm(text);
-    if (term && !factFor(term) && !mathAnswer(text)) {
+    if (term && !spokenMeaning(term) && !mathAnswer(text)) {
       setPending(term);
-      return "i do not know " + term + ". what does it mean?";
+      return "i do not know " + term + ". what do you mean by it?";
     }
     if (looksLikeQuestion(text)) return "i do not know.";
     if (typeof origTalk === "function") {
