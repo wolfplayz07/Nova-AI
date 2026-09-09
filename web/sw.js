@@ -1,4 +1,4 @@
-const CACHE = "nova-local-v6";
+const CACHE = "nova-local-v18";
 
 self.addEventListener("install", function () {
   self.skipWaiting();
@@ -18,10 +18,12 @@ self.addEventListener("fetch", function (event) {
   event.respondWith(
     fetch(event.request, { cache: "no-store" })
       .then(function (res) {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (cache) {
-          cache.put(event.request, copy);
-        });
+        if (res && res.ok && event.request.method === "GET") {
+          var copy = res.clone();
+          caches.open(CACHE).then(function (cache) {
+            cache.put(event.request, copy);
+          });
+        }
         return res;
       })
       .catch(function () {
