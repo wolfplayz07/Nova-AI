@@ -10,5 +10,17 @@
   "lessons": 33,
   "file": "current.json",
   "note": "On-device GRU brain. Fresh phones load current.json. Keep personal diary facts off this file.",
-  "updated": "2026-09-07"
+  "updated": "2026-09-07",
+  "base": {
+    "id": "nova-v7-0",
+    "status": "locked",
+    "kind": "gru-v7",
+    "steps": 0,
+    "loss": null,
+    "ema": null,
+    "lessons": 3,
+    "file": "nova-v7-0.json",
+    "note": "Frozen init brain. Seed lessons only (name, greeting, goodbye). Train from a copy, never overwrite.",
+    "locked": "2026-09-08"
+  }
 }
