@@ -397,8 +397,15 @@
   }
 
   /* Chat/speech pair: only when learning ON. Explicit teach phrases always save. */
+  function isTeachAck(s) {
+    var t = sanitize(s);
+    return /^(got it|lesson saved|saved|ok skipped|locked|updated|added reading|already learning|learning on|learning off)\b/.test(t)
+      || /^ok\. skipped/.test(String(s || "").toLowerCase());
+  }
+
   function learnPair(user, nova) {
     if (!trainer.learning || !trainer.running) return false;
+    if (isUnknownReply(nova) || isTeachAck(nova)) return false;
     if (!pushLesson(user, nova)) return false;
     /* Worker mirror (optional): keep worker corpus warm if present. */
     try {
@@ -494,10 +501,11 @@
       }
     }
 
-    /* Explicit fix of the previous user line (not necessarily after unknown). */
+    /* Explicit fix of the previous user line (not necessarily after unknown). Prefer pending question. */
     m = lower.match(/^fix[:\s]+(.+)$/) || lower.match(/^no[,:]\s*(.+)$/);
-    if (m && lastUser) {
-      if (pushLesson(lastUser, m[1])) {
+    if (m) {
+      var prior = trainer.pendingUnknown || lastUser;
+      if (prior && pushLesson(prior, m[1])) {
         trainer.pendingUnknown = null;
         return "lesson saved.";
       }
@@ -539,6 +547,8 @@
     pause: pause,
     toggle: function () { return trainer.running ? pause() : start(); },
     learnPair: learnPair,
+    pushLesson: pushLesson,
+    teachCorrection: applyCorrection,
     isLearning: function () { return !!(trainer.learning && trainer.running); },
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
     talk: function (t) {
@@ -553,6 +563,7 @@
     handleUser: handleUser,
     markUnknown: function (t) { trainer.pendingUnknown = sanitize(t); },
     clearUnknown: function () { trainer.pendingUnknown = null; },
+    pendingQuestion: function () { return trainer.pendingUnknown; },
     isUnknownReply: isUnknownReply,
     reset: function () { return "Type reset brain confirm to wipe v7."; },
     resetConfirm: function () {
