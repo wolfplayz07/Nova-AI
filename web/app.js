@@ -396,6 +396,12 @@ function reply(text) {
   return "I heard you. You said: \"" + text + "\"";
 }
 
+function isUnknownAnswer(answer) {
+  if (window.NovaTrain && NovaTrain.isUnknownReply) return !!NovaTrain.isUnknownReply(answer);
+  var ansLow = String(answer || "").toLowerCase().trim();
+  return /^i do not know\b/.test(ansLow) || /^i don't know\b/.test(ansLow) || /^i dont know\b/.test(ansLow);
+}
+
 function send(text) {
   var cleaned = text.trim();
   if (!cleaned) return;
@@ -405,12 +411,17 @@ function send(text) {
   chat.messages.push({ role: "assistant", content: answer, at: Date.now() });
   chat.updated = Date.now();
   if (chat.title === "New chat") chat.title = titleFrom(chat.messages);
+  /* Keep correction target in sync even when lookup.js answers "i do not know" without calling train.talk. */
+  if (window.NovaTrain) {
+    if (isUnknownAnswer(answer) && NovaTrain.markUnknown) NovaTrain.markUnknown(cleaned);
+    else if (NovaTrain.clearUnknown) NovaTrain.clearUnknown();
+  }
   /* Learn-while-talk: only when learning ON — append pair + background train steps. */
   if (window.NovaTrain && NovaTrain.isLearning && NovaTrain.isLearning() && NovaTrain.learnPair) {
     var lower = cleaned.toLowerCase();
     var ansLow = String(answer || "").toLowerCase().trim();
     var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|reset |train status|brain status|speak brain)/.test(lower);
-    var isUnknown = /^i do not know\.?$/.test(ansLow) || /^i don't know\.?$/.test(ansLow) || /^i dont know\.?$/.test(ansLow);
+    var isUnknown = isUnknownAnswer(answer);
     var isAck = /^got it/.test(ansLow) || /^lesson saved/.test(ansLow) || /^added reading/.test(ansLow);
     /* Corrections already pushLesson inside train.js; do not train unknown→unknown or ack noise. */
     if (!isCmd && !isUnknown && !isAck) NovaTrain.learnPair(cleaned, answer);

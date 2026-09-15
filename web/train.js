@@ -551,6 +551,9 @@
       return "i do not know.";
     },
     handleUser: handleUser,
+    markUnknown: function (t) { trainer.pendingUnknown = sanitize(t); },
+    clearUnknown: function () { trainer.pendingUnknown = null; },
+    isUnknownReply: isUnknownReply,
     reset: function () { return "Type reset brain confirm to wipe v7."; },
     resetConfirm: function () {
       pause("Learning OFF. Resetting brain.");
