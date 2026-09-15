@@ -319,6 +319,14 @@
     return null;
   }
 
+  function markUnknownQuestion(text) {
+    try {
+      if (global.NovaTrain && typeof global.NovaTrain.markUnknown === "function") {
+        global.NovaTrain.markUnknown(text);
+      }
+    } catch (e) {}
+  }
+
   function ruleThenBrain(origTalk, text) {
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
@@ -327,15 +335,20 @@
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
       setPending(term);
+      markUnknownQuestion(text);
       return "i do not know " + term + ". what do you mean by it?";
     }
-    if (looksLikeQuestion(text)) return "i do not know.";
+    if (looksLikeQuestion(text)) {
+      markUnknownQuestion(text);
+      return "i do not know.";
+    }
     if (typeof origTalk === "function") {
       var guessed = origTalk(text);
       if (guessed && String(guessed).trim() && !/^still learning\.?$/i.test(String(guessed).trim())) {
         return guessed;
       }
     }
+    markUnknownQuestion(text);
     return "i do not know.";
   }
 
