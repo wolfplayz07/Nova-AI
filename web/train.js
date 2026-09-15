@@ -425,13 +425,13 @@
     return /\b(you learning|you're learning|you are learning|learning mode|there'?s a difference|the difference)\b/i.test(String(s || ""));
   }
 
+  function isCancelPhrase(raw) {
+    return /^(skip|nevermind|never mind|cancel|forget it)$/i.test(String(raw || "").trim());
+  }
+
   function extractCorrection(raw) {
     var lower = String(raw || "").trim().toLowerCase(), m;
-    m = lower.match(/^say\s+["']?(.+?)["']?$/);
-    if (m) return m[1].trim();
-    m = lower.match(/^you should say\s+["']?(.+?)["']?$/);
-    if (m) return m[1].trim();
-    m = lower.match(/^the answer is\s+["']?(.+?)["']?$/);
+    m = lower.match(/^(?:say:|say|reply|answer|tell them|you should say|the answer is)[:\s]+["']?(.+?)["']?$/);
     if (m) return m[1].trim();
     m = lower.match(/^fix[:\s]+(.+)$/);
     if (m) return m[1].trim();
@@ -444,6 +444,7 @@
     var lower = String(raw || "").trim().toLowerCase();
     var words;
     if (!lower || lower.length > 60) return false;
+    if (isCancelPhrase(lower)) return false;
     if (/\?$/.test(lower)) return false;
     if (/^(when i say|remember|read |start |stop |train|learn|pause|export|reset|sample)\b/.test(lower)) return false;
     if (isLearningMeta(lower)) return false;
@@ -478,7 +479,7 @@
     }
     if (!pushLesson(q, a)) return null;
     trainer.pendingUnknown = null;
-    return "got it — next time I'll say " + a;
+    return "got it. next time i'll say: " + a;
   }
 
   function handleUser(text, lastUser) {
@@ -493,6 +494,10 @@
 
     /* Immediate correction after an unknown reply. */
     if (trainer.pendingUnknown) {
+      if (isCancelPhrase(raw)) {
+        trainer.pendingUnknown = null;
+        return "ok. skipped.";
+      }
       corrected = extractCorrection(raw);
       if (!corrected && looksLikeShortCorrection(raw)) corrected = raw;
       if (corrected) {

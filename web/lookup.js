@@ -292,7 +292,8 @@
 
   function cancelPending(text) {
     var q = sanitize(text);
-    return /^(skip|nevermind|never mind|no|stop|cancel|forget it)$/.test(q);
+    /* Bare no/yes/ok teach answers — never cancel. */
+    return /^(skip|nevermind|never mind|cancel|forget it)$/.test(q);
   }
 
   function isExplicitTeachPhrase(text) {
@@ -308,11 +309,7 @@
 
   function extractCorrectionAnswer(raw) {
     var lower = String(raw || "").trim().toLowerCase(), m;
-    m = lower.match(/^say\s+["']?(.+?)["']?$/);
-    if (m) return m[1].trim();
-    m = lower.match(/^you should say\s+["']?(.+?)["']?$/);
-    if (m) return m[1].trim();
-    m = lower.match(/^the answer is\s+["']?(.+?)["']?$/);
+    m = lower.match(/^(?:say:|say|reply|answer|tell them|you should say|the answer is)[:\s]+["']?(.+?)["']?$/);
     if (m) return m[1].trim();
     m = lower.match(/^fix[:\s]+(.+)$/);
     if (m) return m[1].trim();
@@ -349,7 +346,7 @@
     if (global.NovaTrain && typeof global.NovaTrain.teachCorrection === "function") {
       msg = global.NovaTrain.teachCorrection(pend.question, answer);
       clearPending();
-      return msg || ("got it — next time I'll say " + sanitize(answer));
+      return msg || ("got it. next time i'll say: " + sanitize(answer));
     }
     /* Fallback without trainer: lesson list only. */
     (function () {
@@ -365,7 +362,7 @@
     })();
     clearPending();
     if (pend.term) return "saved your meaning of " + pend.term + ".";
-    return "got it — next time I'll say " + sanitize(answer);
+    return "got it. next time i'll say: " + sanitize(answer);
   }
 
   function handleTeach(text) {
