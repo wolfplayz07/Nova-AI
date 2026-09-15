@@ -20,12 +20,12 @@
         <h1>NOVA</h1>
         <p id="chatTitle">Local · on this device</p>
       </div>
-      <span class="status" id="status">offline brain</span>
+      <span class="status paused" id="status">not learning · v7</span>
       <div class="train-wrap">
-        <button type="button" class="train-btn" id="trainBtn" title="Train until you stop">Train</button>
+        <button type="button" class="train-btn" id="trainBtn" title="Start learning from chat/speech">Learn</button>
         <button type="button" class="icon-btn menu-btn" id="brainMenuBtn" title="Brain menu" aria-haspopup="true">⋮</button>
         <div class="brain-menu" id="brainMenu" hidden>
-          <button type="button" data-act="toggle">Start training</button>
+          <button type="button" data-act="toggle">Start learning</button>
           <button type="button" data-act="sample">Sample</button>
           <button type="button" data-act="status">Train status</button>
           <button type="button" data-act="export">Export brain</button>
@@ -41,16 +41,16 @@
       <main class="feed" id="feed"></main>
     </div>
     <form class="composer" id="form">
-      <button type="button" class="mic" id="mic" title="Speak">mic</button>
+      <button type="button" class="mic" id="mic" title="Speak (or keyboard dictation)">mic</button>
       <textarea id="draft" rows="1" placeholder="Talk to Nova" enterkeyhint="send"></textarea>
       <button type="submit" class="send" title="Send">↑</button>
     </form>
   </div>
-  <script src="idb.js?v=29"></script>
-  <script src="https://cdn.jsdelivr.net/gh/wolfplayz07/Nova-AI@f131f1e7527df2650388cf960c9082126523e215/web/train.js"></script>
-  <script src="lookup.js?v=29"></script>
-  <script src="fetch.js?v=29"></script>
-  <script src="app.js?v=29"></script>
-  <script src="math-boot.js?v=29"></script>
+  <script src="idb.js?v=30"></script>
+  <script src="train.js?v=30"></script>
+  <script src="lookup.js?v=30"></script>
+  <script src="fetch.js?v=30"></script>
+  <script src="app.js?v=30"></script>
+  <script src="math-boot.js?v=30"></script>
 </body>
 </html>

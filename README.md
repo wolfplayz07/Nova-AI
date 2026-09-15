@@ -1,33 +1,59 @@
 # Nova
 
-Personal assistant. Local first. No App Store. No Siri. No API yet.
+Personal assistant. Local first. No App Store. No Siri. No cloud API keys.
 
-## Open Nova
+## Open Nova (iPhone only — no computer)
 
-Until GitHub Pages finishes the first publish, use:
+1. On iPhone **Safari**, open: **https://wolfplayz07.github.io/Nova-AI/**
+2. Tap **Share** → **Add to Home Screen** → Add.
+3. Open the **Nova** icon. Chat and learning stay on this phone (IndexedDB / localStorage).
 
-**[Launch Nova (preview)](https://htmlpreview.github.io/?https://github.com/wolfplayz07/Nova-AI/blob/main/web/index.html)**
+Until Pages publishes, preview: [htmlpreview](https://htmlpreview.github.io/?https://github.com/wolfplayz07/Nova-AI/blob/main/web/index.html)
 
-After you turn Pages on (one time), the stable site will be:
+## Learn while you talk
 
-**https://wolfplayz07.github.io/Nova-AI/**
+Learning defaults **OFF**. When ON, each chat/speech turn appends a `you:` / `nova:` pair and runs background Adam steps on the v7 GRU (same brain lineage: `nova-tiny-brain-v7`). When OFF, chat still works; **weights freeze**.
 
-Safari → that link → Share → Add to Home Screen.
-
-## What this icon is
-
-**v3** is a 32-unit character RNN. It can learn a short phrase book. It will not talk like Grok.
-
-The long path (on-device LM in Swift) is in [ROADMAP.md](ROADMAP.md).
-
-## Careful on-phone training
+### Start (learning ON)
 
 ```
+start learning
+learn from me
 train
+start training
+```
+
+Or tap **Learn**.
+
+### Stop (learning OFF — freeze weights)
+
+```
+stop learning
 pause
+stop
+pause train
+stop train
+stop training
+```
+
+Or tap **Stop**. Status chip shows **learning · N steps** vs **not learning · N steps**.
+
+### Other
+
+```
 sample
 train status
 reset brain confirm
 ```
 
-v3 starts at 0 steps (new store: `nova-tiny-brain-v3`). Old v2 weights are left alone.
+Explicit teaches (`when i say … say …`, `fix: …`) always save to the lesson buffer; weight updates only while learning is ON.
+
+### Voice
+
+If Web Speech API works in your Safari Home Screen build, tap **mic**. If not, the button explains: use the **keyboard dictation mic**, then Send — same learn ON/OFF path. We do not fake speech recognition.
+
+## What this is
+
+**v7** is a 64-unit GRU character model on-device. It will not talk like Grok. Brain checkpoints stay in localStorage + IndexedDB (OPFS when available). No cloud weights.
+
+The long path (Swift shell + scratch trainer) is in [ROADMAP.md](ROADMAP.md).

@@ -6,6 +6,10 @@ Three tracks. Same goal: a Nova that is *yours*.
 
 JavaScript RNN on the Home Screen icon. Good lab. Not a conversation engine.
 
+## iPhone-only learn-while-talk (Track A+)
+
+Home Screen Safari web app. Say **start learning** / **train** to train from chat and speech; **stop learning** / **pause** / **stop** freezes weights. Status chip: learning vs not learning + step count. Same v7 IndexedDB lineage. No computer required; no cloud API keys.
+
 ## Track C — from-scratch lineage (no outside weights)
 
 Python trainer in [`scratch/`](scratch/README.md).

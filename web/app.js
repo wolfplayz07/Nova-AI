@@ -99,14 +99,15 @@ function lastUserLine() {
 
 function syncTrainUi(st) {
   if (!st && window.NovaTrain) st = NovaTrain.status();
-  var running = !!(st && st.running);
+  var running = !!(st && (st.learning || st.running));
   if (trainBtn) {
-    trainBtn.textContent = running ? "Stop" : "Train";
+    trainBtn.textContent = running ? "Stop" : "Learn";
     trainBtn.classList.toggle("on", running);
+    trainBtn.title = running ? "Stop learning (freeze weights)" : "Start learning from chat/speech";
   }
   if (brainMenu) {
     var tog = brainMenu.querySelector("[data-act=toggle]");
-    if (tog) tog.textContent = running ? "Stop training" : "Start training";
+    if (tog) tog.textContent = running ? "Stop learning" : "Start learning";
   }
 }
 
@@ -114,14 +115,17 @@ function setStatus(st) {
   if (!statusEl) return;
   if (!st && window.NovaTrain) st = NovaTrain.status();
   syncTrainUi(st);
-  if (st && st.running) {
-    var loss = st.loss == null ? "" : " loss " + st.loss.toFixed(2);
-    statusEl.textContent = "v7 " + st.steps + loss;
+  var learning = !!(st && (st.learning || st.running));
+  statusEl.classList.toggle("learning", learning);
+  statusEl.classList.toggle("paused", !learning);
+  if (learning) {
+    var loss = st.loss == null ? "" : " · loss " + st.loss.toFixed(2);
+    statusEl.textContent = "learning · " + st.steps + " steps" + loss;
   } else if (st && st.steps) {
-    var pausedLoss = st.loss == null ? "" : " \u00b7 loss " + st.loss.toFixed(2);
-    statusEl.textContent = "paused \u00b7 " + st.steps + " steps" + pausedLoss;
+    var pausedLoss = st.loss == null ? "" : " · loss " + st.loss.toFixed(2);
+    statusEl.textContent = "not learning · " + st.steps + " steps" + pausedLoss;
   } else {
-    statusEl.textContent = "v7 brain";
+    statusEl.textContent = "not learning · v7";
   }
 }
 
@@ -145,7 +149,7 @@ function runBrain(act) {
   else if (act === "sample") note("Tiny brain sample:\n" + T.sample(50));
   else if (act === "status") {
     var st = T.status();
-    note("Running: " + st.running + ". Steps: " + st.steps + ". Loss (smooth): " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0));
+    note("Learning: " + !!(st.learning || st.running) + ". Steps: " + st.steps + ". Loss (smooth): " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0));
   } else if (act === "export") note(T.exportBrain());
 }
 
@@ -297,7 +301,7 @@ function render() {
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova v7</h2><p>Paste <b>read ...</b> or a webpage link. I cannot watch video or see pictures.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Train</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova v7</h2><p>Say <b>start learning</b> to train while you talk. <b>stop learning</b> freezes weights. Paste <b>read ...</b> for text.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Learn</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-act]").forEach(function (btn) {
       btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
@@ -346,15 +350,15 @@ function memoryList() {
 function reply(text) {
   var lower = text.toLowerCase().trim();
   var T = window.NovaTrain;
-  if (T && (lower === "train" || lower === "train a little" || lower === "start training")) return T.start();
-  if (T && (lower === "pause" || lower === "stop" || lower === "pause train" || lower === "stop train")) return T.pause();
+  if (T && (lower === "train" || lower === "train a little" || lower === "start training" || lower === "start learning" || lower === "learn from me" || lower === "start learn" || lower === "learn")) return T.start();
+  if (T && (lower === "pause" || lower === "stop" || lower === "pause train" || lower === "stop train" || lower === "stop training" || lower === "stop learning" || lower === "pause learning" || lower === "stop learn")) return T.pause();
   if (T && (lower === "sample" || lower === "speak brain")) return "Tiny brain sample:\n" + T.sample(50);
   if (T && (lower === "export brain" || lower === "export")) return T.exportBrain();
   if (T && lower === "reset brain confirm") return T.resetConfirm();
   if (T && (lower === "reset brain" || lower === "wipe brain")) return T.reset();
   if (T && (lower === "train status" || lower === "brain status")) {
     var st = T.status();
-    return "Running: " + st.running + ". Steps: " + st.steps + ". Smooth loss: " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0);
+    return "Learning: " + !!(st.learning || st.running) + ". Steps: " + st.steps + ". Smooth loss: " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0);
   }
   if (/\.(jpg|jpeg|png|gif|webp|heic|mp4|mov|webm|m4v)(\?|$)/i.test(text)) {
     return "I only eat letters. I cannot see pictures or watch video. Copy the words and send: read those words";
@@ -393,9 +397,16 @@ function send(text) {
   if (!cleaned) return;
   var chat = currentChat();
   chat.messages.push({ role: "user", content: cleaned, at: Date.now() });
-  chat.messages.push({ role: "assistant", content: reply(cleaned), at: Date.now() });
+  var answer = reply(cleaned);
+  chat.messages.push({ role: "assistant", content: answer, at: Date.now() });
   chat.updated = Date.now();
   if (chat.title === "New chat") chat.title = titleFrom(chat.messages);
+  /* Learn-while-talk: only when learning ON — append pair + background train steps. */
+  if (window.NovaTrain && NovaTrain.isLearning && NovaTrain.isLearning() && NovaTrain.learnPair) {
+    var lower = cleaned.toLowerCase();
+    var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|reset |train status|brain status|speak brain)/.test(lower);
+    if (!isCmd) NovaTrain.learnPair(cleaned, answer);
+  }
   save();
   render();
 }
@@ -437,13 +448,21 @@ if (toggleSide) {
 
 var Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (!Speech) {
-  mic.style.display = "none";
+  /* iOS Safari Home Screen often lacks Web Speech API — do not fake mic. */
+  mic.textContent = "⌨";
+  mic.title = "Speech API unavailable. Use keyboard mic / dictation, then Send. Learning follows Learn ON/OFF.";
+  mic.addEventListener("click", function () {
+    note("Speak button: this iPhone Safari build has no Web Speech API. Tap the keyboard mic to dictate into the box, then Send. Learning still follows start learning / stop learning.");
+  });
 } else {
   var rec = new Speech();
   rec.lang = navigator.language || "en-US";
   rec.interimResults = false;
+  rec.continuous = false;
   rec.onresult = function (event) { send(event.results[0][0].transcript); };
+  rec.onerror = function () { mic.classList.remove("hot"); };
   rec.onend = function () { mic.classList.remove("hot"); };
+  mic.title = "Speak — same path as typing; learning follows Learn ON/OFF";
   mic.addEventListener("click", function () {
     try { mic.classList.add("hot"); rec.start(); } catch (e) { mic.classList.remove("hot"); }
   });
