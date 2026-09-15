@@ -126,17 +126,45 @@
   }
 
   function getPending() {
-    try { return JSON.parse(localStorage.getItem(PENDING) || "null"); }
+    var p;
+    try { p = JSON.parse(localStorage.getItem(PENDING) || "null"); }
     catch (e) { return null; }
+    if (!p) return null;
+    /* Migrate legacy { word } → { question, term }. */
+    if (!p.question && p.word) {
+      return { question: p.word, term: p.word, at: p.at || Date.now() };
+    }
+    if (!p.question) return null;
+    return p;
   }
 
-  function setPending(word) {
-    try { localStorage.setItem(PENDING, JSON.stringify({ word: word, at: Date.now() })); }
-    catch (e) {}
+  function setPending(opts) {
+    var question, term, payload;
+    if (opts == null) return;
+    if (typeof opts === "string") {
+      question = sanitize(opts);
+      term = question;
+    } else {
+      question = sanitize(opts.question || "");
+      term = opts.term ? sanitize(opts.term) : null;
+    }
+    if (!question) return;
+    payload = { question: question, term: term, at: Date.now(), word: term || question };
+    try { localStorage.setItem(PENDING, JSON.stringify(payload)); } catch (e) {}
+    try {
+      if (global.NovaTrain && typeof global.NovaTrain.markUnknown === "function") {
+        global.NovaTrain.markUnknown(question);
+      }
+    } catch (e2) {}
   }
 
   function clearPending() {
     try { localStorage.removeItem(PENDING); } catch (e) {}
+    try {
+      if (global.NovaTrain && typeof global.NovaTrain.clearUnknown === "function") {
+        global.NovaTrain.clearUnknown();
+      }
+    } catch (e2) {}
   }
 
   function allPairs() {
@@ -267,9 +295,36 @@
     return /^(skip|nevermind|never mind|no|stop|cancel|forget it)$/.test(q);
   }
 
+  function isExplicitTeachPhrase(text) {
+    var lower = sanitize(text);
+    return /^when i say /.test(lower)
+      || /^read /.test(lower)
+      || /^lock /.test(lower)
+      || /^edit /.test(lower)
+      || /^(?:define|teach) /.test(lower)
+      || /^fix[:\s]/.test(lower)
+      || /\bmeans\b/.test(lower);
+  }
+
+  function extractCorrectionAnswer(raw) {
+    var lower = String(raw || "").trim().toLowerCase(), m;
+    m = lower.match(/^say\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^you should say\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^the answer is\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^fix[:\s]+(.+)$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^no[,:]\s*(.+)$/);
+    if (m) return m[1].trim();
+    return String(raw || "").trim();
+  }
+
   function finishPending(text) {
     var pend = getPending();
-    if (!pend || !pend.word) return null;
+    var answer, msg, term;
+    if (!pend || !pend.question) return null;
     if (Date.now() - (pend.at || 0) > 10 * 60 * 1000) {
       clearPending();
       return null;
@@ -278,16 +333,39 @@
       clearPending();
       return "ok. skipped.";
     }
-    if (looksLikeQuestion(text) || /^when i say /.test(sanitize(text)) || /^read /.test(sanitize(text)) || /^lock /.test(sanitize(text))) {
-      clearPending();
+    /* Explicit teach phrases: leave pending for other handlers / clear after they save. */
+    if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
-    if (saveUser(pend.word, text)) {
-      clearPending();
-      return "saved your meaning of " + pend.word + ".";
+    /* Re-ask while pending: replace slot, do not silent-drop. */
+    if (looksLikeQuestion(text) && !isExplicitTeachPhrase(text)) {
+      term = unknownTerm(text);
+      setPending({ question: text, term: term });
+      return null;
     }
+    answer = extractCorrectionAnswer(text);
+    if (!answer) return null;
+    if (pend.term) saveUser(pend.term, answer);
+    if (global.NovaTrain && typeof global.NovaTrain.teachCorrection === "function") {
+      msg = global.NovaTrain.teachCorrection(pend.question, answer);
+      clearPending();
+      return msg || ("got it — next time I'll say " + sanitize(answer));
+    }
+    /* Fallback without trainer: lesson list only. */
+    (function () {
+      var lessons = lessonsFromStore();
+      var q = sanitize(pend.question), a = sanitize(answer), i;
+      for (i = lessons.length - 1; i >= 0; i--) {
+        if (sanitize(lessons[i].user) === q && /^i do not know\b/i.test(sanitize(lessons[i].nova))) {
+          lessons.splice(i, 1);
+        }
+      }
+      lessons.push({ user: q, nova: a });
+      writeLessons(lessons);
+    })();
     clearPending();
-    return null;
+    if (pend.term) return "saved your meaning of " + pend.term + ".";
+    return "got it — next time I'll say " + sanitize(answer);
   }
 
   function handleTeach(text) {
@@ -319,14 +397,6 @@
     return null;
   }
 
-  function markUnknownQuestion(text) {
-    try {
-      if (global.NovaTrain && typeof global.NovaTrain.markUnknown === "function") {
-        global.NovaTrain.markUnknown(text);
-      }
-    } catch (e) {}
-  }
-
   function ruleThenBrain(origTalk, text) {
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
@@ -334,12 +404,11 @@
     if (hit) return hit;
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
-      setPending(term);
-      markUnknownQuestion(text);
+      setPending({ question: text, term: term });
       return "i do not know " + term + ". what do you mean by it?";
     }
     if (looksLikeQuestion(text)) {
-      markUnknownQuestion(text);
+      setPending({ question: text, term: null });
       return "i do not know.";
     }
     if (typeof origTalk === "function") {
@@ -348,7 +417,7 @@
         return guessed;
       }
     }
-    markUnknownQuestion(text);
+    setPending({ question: text, term: null });
     return "i do not know.";
   }
 
