@@ -88,11 +88,15 @@ function currentChat() {
   return state.conversations[0];
 }
 
-function lastUserLine() {
+function lastUserLine(skipLatest) {
   var msgs = currentChat().messages || [];
-  var i;
+  var i, seen = 0;
   for (i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === "user") return msgs[i].content;
+    if (msgs[i].role !== "user") continue;
+    seen += 1;
+    /* After send() pushes the current line, skip it so corrections see the prior question. */
+    if (skipLatest && seen === 1) continue;
+    return msgs[i].content;
   }
   return "";
 }
@@ -385,7 +389,7 @@ function reply(text) {
     return "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".";
   }
   if (T && T.handleUser) {
-    var taught = T.handleUser(text, lastUserLine());
+    var taught = T.handleUser(text, lastUserLine(true));
     if (taught) return taught;
   }
   if (T && T.talk) return T.talk(text);
@@ -404,8 +408,12 @@ function send(text) {
   /* Learn-while-talk: only when learning ON — append pair + background train steps. */
   if (window.NovaTrain && NovaTrain.isLearning && NovaTrain.isLearning() && NovaTrain.learnPair) {
     var lower = cleaned.toLowerCase();
+    var ansLow = String(answer || "").toLowerCase().trim();
     var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|reset |train status|brain status|speak brain)/.test(lower);
-    if (!isCmd) NovaTrain.learnPair(cleaned, answer);
+    var isUnknown = /^i do not know\.?$/.test(ansLow) || /^i don't know\.?$/.test(ansLow) || /^i dont know\.?$/.test(ansLow);
+    var isAck = /^got it/.test(ansLow) || /^lesson saved/.test(ansLow) || /^added reading/.test(ansLow);
+    /* Corrections already pushLesson inside train.js; do not train unknown→unknown or ack noise. */
+    if (!isCmd && !isUnknown && !isAck) NovaTrain.learnPair(cleaned, answer);
   }
   save();
   render();
