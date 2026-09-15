@@ -1,4 +1,6 @@
-/* Nova v5 worker. Same char RNN, Adam, off the UI thread. */
+/* Nova v5 worker (experimental). iPhone learn-while-talk uses main-thread web/train.js v7
+   so Safari Home Screen actually counts steps. This worker still accepts lesson/start/stop
+   messages if a host wires it; do not replace v7 IndexedDB lineage from here. */
 var H = 32, SEQ = 24, LR = 0.01, BETA1 = 0.9, BETA2 = 0.999;
 var ALPHA = "abcdefghijklmnopqrstuvwxyz0123456789 .,!?'-\n";
 var BASE =
