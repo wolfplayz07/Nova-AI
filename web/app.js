@@ -312,15 +312,30 @@ function render() {
     });
     return;
   }
-  chat.messages.forEach(function (msg) {
-    var meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = msg.role === "user" ? "You" : "Nova";
+    chat.messages.forEach(function (msg, idx) {
     var bubble = document.createElement("div");
     bubble.className = "bubble " + (msg.role === "user" ? "me" : "nova");
     bubble.textContent = msg.content;
-    feed.appendChild(meta);
     feed.appendChild(bubble);
+    /* Skip chip under the latest unknown Nova bubble when a correction is pending. */
+    if (
+      idx === chat.messages.length - 1
+      && msg.role === "assistant"
+      && isUnknownAnswer(msg.content)
+      && window.NovaTrain
+      && NovaTrain.pendingQuestion
+      && NovaTrain.pendingQuestion()
+    ) {
+      var chips = document.createElement("div");
+      chips.className = "chips teach-chips";
+      var skip = document.createElement("button");
+      skip.type = "button";
+      skip.className = "chip";
+      skip.textContent = "Skip";
+      skip.onclick = function () { send("skip"); };
+      chips.appendChild(skip);
+      feed.appendChild(chips);
+    }
   });
   feed.scrollTop = feed.scrollHeight;
 }
@@ -389,7 +404,8 @@ function reply(text) {
     return "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + ".";
   }
   if (T && T.handleUser) {
-    var taught = T.handleUser(text, lastUserLine(true));
+    var prior = arguments.length > 1 && arguments[1] != null ? arguments[1] : lastUserLine(true);
+    var taught = T.handleUser(text, prior);
     if (taught) return taught;
   }
   if (T && T.talk) return T.talk(text);
@@ -406,8 +422,10 @@ function send(text) {
   var cleaned = text.trim();
   if (!cleaned) return;
   var chat = currentChat();
+  /* Capture prior question BEFORE pushing this turn (correction UX). */
+  var priorUser = lastUserLine(false);
   chat.messages.push({ role: "user", content: cleaned, at: Date.now() });
-  var answer = reply(cleaned);
+  var answer = reply(cleaned, priorUser);
   chat.messages.push({ role: "assistant", content: answer, at: Date.now() });
   chat.updated = Date.now();
   if (chat.title === "New chat") chat.title = titleFrom(chat.messages);
