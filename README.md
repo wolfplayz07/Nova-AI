@@ -48,6 +48,10 @@ reset brain confirm
 
 Explicit teaches (`when i say … say …`, `fix: …`) always save to the lesson buffer; weight updates only while learning is ON.
 
+### After “I do not know”
+
+Just say the answer on the next line (or `Say no`, `the answer is …`). Nova saves that as the lasting reply for the question — no computer, no special app. Say `skip` to cancel.
+
 ### Voice
 
 If Web Speech API works in your Safari Home Screen build, tap **mic**. If not, the button explains: use the **keyboard dictation mic**, then Send — same learn ON/OFF path. We do not fake speech recognition.

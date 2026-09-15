@@ -422,7 +422,7 @@ function send(text) {
     var ansLow = String(answer || "").toLowerCase().trim();
     var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|reset |train status|brain status|speak brain)/.test(lower);
     var isUnknown = isUnknownAnswer(answer);
-    var isAck = /^got it/.test(ansLow) || /^lesson saved/.test(ansLow) || /^added reading/.test(ansLow);
+    var isAck = /^(got it|lesson saved|saved|locked|updated|ok\. skipped|added reading|already learning|learning on|learning off)\b/.test(ansLow);
     /* Corrections already pushLesson inside train.js; do not train unknown→unknown or ack noise. */
     if (!isCmd && !isUnknown && !isAck) NovaTrain.learnPair(cleaned, answer);
   }
