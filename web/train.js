@@ -64,7 +64,8 @@
 
   var trainer = {
     running: false, learning: false, timer: null, startedAt: 0, sessionSteps: 0,
-    lastPersist: 0, text: BASE, lessons: [], reading: "", onUpdate: null
+    lastPersist: 0, text: BASE, lessons: [], reading: "", onUpdate: null,
+    pendingUnknown: null
   };
 
   function sanitize(s) {
@@ -406,23 +407,108 @@
     return true;
   }
 
+  function isUnknownReply(s) {
+    var t = sanitize(s);
+    if (!t) return false;
+    return t === "i do not know" || t === "i dont know" || t === "i don't know"
+      || t.indexOf("i do not know") === 0 || t.indexOf("i dont know") === 0;
+  }
+
+  function isLearningMeta(s) {
+    return /\b(you learning|you're learning|you are learning|learning mode|there'?s a difference|the difference)\b/i.test(String(s || ""));
+  }
+
+  function extractCorrection(raw) {
+    var lower = String(raw || "").trim().toLowerCase(), m;
+    m = lower.match(/^say\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^you should say\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^the answer is\s+["']?(.+?)["']?$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^fix[:\s]+(.+)$/);
+    if (m) return m[1].trim();
+    m = lower.match(/^no[,:]\s*(.+)$/);
+    if (m) return m[1].trim();
+    return null;
+  }
+
+  function looksLikeShortCorrection(raw) {
+    var lower = String(raw || "").trim().toLowerCase();
+    var words;
+    if (!lower || lower.length > 60) return false;
+    if (/\?$/.test(lower)) return false;
+    if (/^(when i say|remember|read |start |stop |train|learn|pause|export|reset|sample)\b/.test(lower)) return false;
+    if (isLearningMeta(lower)) return false;
+    words = lower.split(/\s+/).filter(Boolean);
+    if (!words.length || words.length > 6) return false;
+    if (/^(what|who|where|when|why|how|can|do|does|did|is|are|will|would|could|should)\b/.test(lower)) return false;
+    return true;
+  }
+
+  function parseWhenISay(lower) {
+    var m = lower.match(/^when i say\s+(.+?)\s+you say\s+(.+)$/)
+      || lower.match(/^when i say\s+(.+?)\s+say\s+(.+)$/);
+    var trigger, ans;
+    if (!m) return null;
+    trigger = m[1].trim();
+    ans = m[2].trim();
+    if (!trigger || !ans) return null;
+    /* Meta chatter about learning must not become a lesson. */
+    if (isLearningMeta(lower) || isLearningMeta(trigger) || isLearningMeta(ans)) return null;
+    if (trigger.length > 120 || ans.length > 120) return null;
+    return { trigger: trigger, ans: ans };
+  }
+
+  function applyCorrection(question, answer) {
+    var q = sanitize(question), a = sanitize(answer), i;
+    if (!q || !a) return null;
+    /* Drop any prior unknown pair for the same question so lookup hits the correction. */
+    for (i = trainer.lessons.length - 1; i >= 0; i--) {
+      if (trainer.lessons[i].user === q && isUnknownReply(trainer.lessons[i].nova)) {
+        trainer.lessons.splice(i, 1);
+      }
+    }
+    if (!pushLesson(q, a)) return null;
+    trainer.pendingUnknown = null;
+    return "got it — next time I'll say " + a;
+  }
+
   function handleUser(text, lastUser) {
-    var raw = String(text || "").trim(), lower = raw.toLowerCase(), m;
+    var raw = String(text || "").trim(), lower = raw.toLowerCase(), m, corrected, when;
     if (lower.indexOf("read ") === 0) {
       trainer.reading = (trainer.reading + " " + sanitize(raw.slice(5))).slice(-8000);
       trainer.text = corpus();
+      trainer.pendingUnknown = null;
       persist();
       return "added reading.";
     }
+
+    /* Immediate correction after an unknown reply. */
+    if (trainer.pendingUnknown) {
+      corrected = extractCorrection(raw);
+      if (!corrected && looksLikeShortCorrection(raw)) corrected = raw;
+      if (corrected) {
+        m = applyCorrection(trainer.pendingUnknown, corrected);
+        if (m) return m;
+      }
+    }
+
+    /* Explicit fix of the previous user line (not necessarily after unknown). */
     m = lower.match(/^fix[:\s]+(.+)$/) || lower.match(/^no[,:]\s*(.+)$/);
     if (m && lastUser) {
-      pushLesson(lastUser, m[1]);
-      return "lesson saved.";
+      if (pushLesson(lastUser, m[1])) {
+        trainer.pendingUnknown = null;
+        return "lesson saved.";
+      }
     }
-    m = lower.match(/^when i say (.+?) say (.+)$/);
-    if (m) {
-      pushLesson(m[1], m[2]);
-      return "lesson saved.";
+
+    when = parseWhenISay(lower);
+    if (when) {
+      if (pushLesson(when.trigger, when.ans)) {
+        trainer.pendingUnknown = null;
+        return "lesson saved.";
+      }
     }
     return null;
   }
@@ -457,7 +543,11 @@
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
     talk: function (t) {
       var hit = lookupReply(t);
-      if (hit) return hit;
+      if (hit) {
+        trainer.pendingUnknown = null;
+        return hit;
+      }
+      trainer.pendingUnknown = sanitize(t);
       return "i do not know.";
     },
     handleUser: handleUser,
@@ -470,6 +560,7 @@
       vW = emptyMoments();
       trainer.lessons = [];
       trainer.reading = "";
+      trainer.pendingUnknown = null;
       persist();
       emit();
       return "v7 wiped.";
