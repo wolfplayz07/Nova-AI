@@ -130,7 +130,6 @@
     try { p = JSON.parse(localStorage.getItem(PENDING) || "null"); }
     catch (e) { return null; }
     if (!p) return null;
-    /* Migrate legacy { word } → { question, term }. */
     if (!p.question && p.word) {
       return { question: p.word, term: p.word, at: p.at || Date.now() };
     }
@@ -266,11 +265,17 @@
     return null;
   }
 
+  function startsLikeQuestion(text) {
+    var q = sanitize(text);
+    if (!q) return false;
+    return /^(what|whats|who|where|when|why|how|can|could|do|does|did|is|are|am|should|would|will|which|define)\b/.test(q);
+  }
+
   function looksLikeQuestion(text) {
     var q = String(text || "").toLowerCase().trim();
     if (!q) return false;
     if (q.indexOf("?") !== -1) return true;
-    return /^(what|whats|who|where|when|why|how|can|could|do|does|did|is|are|am|should|would|will|which|define)\b/.test(q);
+    return startsLikeQuestion(text);
   }
 
   function ingestRead(raw) {
@@ -292,7 +297,6 @@
 
   function cancelPending(text) {
     var q = sanitize(text);
-    /* Bare no/yes/ok teach answers — never cancel. */
     return /^(skip|nevermind|never mind|cancel|forget it)$/.test(q);
   }
 
@@ -330,12 +334,11 @@
       clearPending();
       return "ok. skipped.";
     }
-    /* Explicit teach phrases: leave pending for other handlers / clear after they save. */
     if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
-    /* Re-ask while pending: replace slot, do not silent-drop. */
-    if (looksLikeQuestion(text) && !isExplicitTeachPhrase(text)) {
+    /* Re-ask only if the line STARTS like a question. A reply that contains ? is still a teach. */
+    if (startsLikeQuestion(text) && !isExplicitTeachPhrase(text)) {
       term = unknownTerm(text);
       setPending({ question: text, term: term });
       return null;
@@ -348,14 +351,11 @@
       clearPending();
       return msg || ("got it. next time i'll say: " + sanitize(answer));
     }
-    /* Fallback without trainer: lesson list only. */
     (function () {
       var lessons = lessonsFromStore();
       var q = sanitize(pend.question), a = sanitize(answer), i;
       for (i = lessons.length - 1; i >= 0; i--) {
-        if (sanitize(lessons[i].user) === q && /^i do not know\b/i.test(sanitize(lessons[i].nova))) {
-          lessons.splice(i, 1);
-        }
+        if (sanitize(lessons[i].user) === q) lessons.splice(i, 1);
       }
       lessons.push({ user: q, nova: a });
       writeLessons(lessons);
