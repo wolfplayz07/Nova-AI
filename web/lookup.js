@@ -125,30 +125,44 @@
     return e.locked || e.user || "";
   }
 
+  function isYesNoQuestion(text) {
+    var q = sanitize(text);
+    return /^(can|could|do|does|did|is|are|am|will|would|should|have|has|may)\b/.test(q);
+  }
+
+  function normYesNo(s) {
+    var q = sanitize(s);
+    if (/^(yes|y|yeah|yep|yup|yea)$/.test(q)) return "yes";
+    if (/^(no|n|nope|nah)$/.test(q)) return "no";
+    return null;
+  }
+
   function getPending() {
     var p;
     try { p = JSON.parse(localStorage.getItem(PENDING) || "null"); }
     catch (e) { return null; }
     if (!p) return null;
     if (!p.question && p.word) {
-      return { question: p.word, term: p.word, at: p.at || Date.now() };
+      return { question: p.word, term: p.word, at: p.at || Date.now(), kind: p.kind || null };
     }
     if (!p.question) return null;
     return p;
   }
 
   function setPending(opts) {
-    var question, term, payload;
+    var question, term, kind, payload;
     if (opts == null) return;
     if (typeof opts === "string") {
       question = sanitize(opts);
       term = question;
+      kind = isYesNoQuestion(opts) ? "yn" : null;
     } else {
       question = sanitize(opts.question || "");
       term = opts.term ? sanitize(opts.term) : null;
+      kind = opts.kind || (isYesNoQuestion(opts.question || "") ? "yn" : null);
     }
     if (!question) return;
-    payload = { question: question, term: term, at: Date.now(), word: term || question };
+    payload = { question: question, term: term, kind: kind, at: Date.now(), word: term || question };
     try { localStorage.setItem(PENDING, JSON.stringify(payload)); } catch (e) {}
     try {
       if (global.NovaTrain && typeof global.NovaTrain.markUnknown === "function") {
@@ -324,7 +338,7 @@
 
   function finishPending(text) {
     var pend = getPending();
-    var answer, msg, term;
+    var answer, msg, term, yn;
     if (!pend || !pend.question) return null;
     if (Date.now() - (pend.at || 0) > 10 * 60 * 1000) {
       clearPending();
@@ -337,14 +351,17 @@
     if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
-    /* Re-ask only if the line STARTS like a question. A reply that contains ? is still a teach. */
-    if (startsLikeQuestion(text) && !isExplicitTeachPhrase(text)) {
+    if (startsLikeQuestion(text) && !isExplicitTeachPhrase(text) && !normYesNo(text)) {
       term = unknownTerm(text);
       setPending({ question: text, term: term });
       return null;
     }
     answer = extractCorrectionAnswer(text);
     if (!answer) return null;
+    if (pend.kind === "yn" || isYesNoQuestion(pend.question)) {
+      yn = normYesNo(answer);
+      if (yn) answer = yn;
+    }
     if (pend.term) saveUser(pend.term, answer);
     if (global.NovaTrain && typeof global.NovaTrain.teachCorrection === "function") {
       msg = global.NovaTrain.teachCorrection(pend.question, answer);
@@ -373,7 +390,10 @@
     var m = lower.match(/^when i say (.+?) say (.+)$/);
     if (m) {
       var lessons = lessonsFromStore();
-      lessons.push({ user: sanitize(m[1]), nova: sanitize(m[2]) });
+      var reply = sanitize(m[2]);
+      var yn = isYesNoQuestion(m[1]) ? normYesNo(m[2]) : null;
+      if (yn) reply = yn;
+      lessons.push({ user: sanitize(m[1]), nova: reply });
       writeLessons(lessons);
       clearPending();
       return "lesson saved.";
@@ -404,6 +424,10 @@
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
       setPending({ question: text, term: term });
       return "i do not know " + term + ". what do you mean by it?";
+    }
+    if (isYesNoQuestion(text)) {
+      setPending({ question: text, term: null, kind: "yn" });
+      return "yes or no?";
     }
     if (looksLikeQuestion(text)) {
       setPending({ question: text, term: null });
