@@ -211,6 +211,15 @@
     return lessonsFromStore().concat(CANNED);
   }
 
+  /* "How do you live?" contains the yes/no key "do you live" but asks something else.
+     For how/what/why queries, a key found inside the query only counts if it starts the
+     query, or if the key is not itself a question (e.g. a noun phrase like "your dog"). */
+  function whFalseFriend(q, u) {
+    if (!/^(how|what|whats|why)\b/.test(q)) return false;
+    if (q.indexOf(u) === 0) return false;
+    return startsLikeQuestion(u);
+  }
+
   function lookup(text) {
     var q = sanitize(text);
     if (!q) return null;
@@ -227,6 +236,7 @@
       u = sanitize(list[n].user);
       if (tooShort(u)) continue;
       if (q.indexOf(u) === -1 && !(u.indexOf(q) !== -1 && q.length >= 8)) continue;
+      if (q.indexOf(u) !== -1 && whFalseFriend(q, u)) continue;
       key = u + "\0" + sanitize(list[n].nova);
       counts[key] = (counts[key] || 0) + 1;
       answers[key] = list[n].nova;
