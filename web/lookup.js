@@ -72,6 +72,16 @@
     try { localStorage.setItem(STORE, JSON.stringify(p)); } catch (e) {}
   }
 
+  /* Write lessons and keep train.js's in-memory copy in sync so its next persist() does not resurrect removed pairs. */
+  function saveLessons(lessons) {
+    writeLessons(lessons);
+    try {
+      if (global.NovaTrain && typeof global.NovaTrain.setLessons === "function") {
+        global.NovaTrain.setLessons(lessons);
+      }
+    } catch (e) {}
+  }
+
   function lessonsFromStore() {
     var p = readPack();
     return Array.isArray(p.lessons) ? p.lessons : [];
@@ -211,8 +221,13 @@
     return bestKey ? answers[bestKey] : null;
   }
 
+  /* Question form for fact lookups: drop trailing punctuation, treat "what's" like "whats". */
+  function factQ(text) {
+    return sanitize(text).replace(/[?.!,\s]+$/, "").replace(/^what's /, "whats ");
+  }
+
   function unknownTerm(text) {
-    var q = sanitize(text);
+    var q = factQ(text);
     if (/\bmy\b/.test(q) && /definition|meaning/.test(q)) return null;
     var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean)?$/);
     if (!m) return null;
@@ -223,10 +238,24 @@
   }
 
   function userAskWord(text) {
-    var q = sanitize(text);
+    var q = factQ(text);
     var m = q.match(/^(?:my|my definition of|my meaning of|what do i mean by|what is my definition of|what is my meaning of)\s+(.+)$/);
     if (!m) return null;
     return m[1].replace(/^a |^an |^the /, "").replace(/\s+mean$/, "").trim();
+  }
+
+  /* Drop lesson pairs that ask what WORD is (what is a photo, what's a photo, define photo...). */
+  function dropWhatIsLessons(word) {
+    var target = sanitize(word);
+    var lessons = lessonsFromStore();
+    var kept = [], n;
+    if (!target) return 0;
+    for (n = 0; n < lessons.length; n++) {
+      if (lessons[n] && unknownTerm(lessons[n].user) === target) continue;
+      kept.push(lessons[n]);
+    }
+    if (kept.length !== lessons.length) saveLessons(kept);
+    return lessons.length - kept.length;
   }
 
   function lookupFact(text) {
@@ -399,7 +428,10 @@
       return "lesson saved.";
     }
     m = lower.match(/^lock\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
-    if (m && saveLocked(m[1], m[2])) return "locked " + sanitize(m[1]) + ".";
+    if (m && saveLocked(m[1], m[2])) {
+      dropWhatIsLessons(m[1]);
+      return "locked " + sanitize(m[1]) + ".";
+    }
     m = lower.match(/^edit\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
     if (m) {
       if (saveUser(m[1], m[2])) return "updated your meaning of " + sanitize(m[1]) + ".";
@@ -418,7 +450,8 @@
   function ruleThenBrain(origTalk, text) {
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
-    var hit = mathAnswer(text) || lookup(text) || lookupFact(text);
+    /* Math first; a locked/user fact beats lessons for what is X / define X / my X. */
+    var hit = mathAnswer(text) || lookupFact(text) || lookup(text);
     if (hit) return hit;
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {

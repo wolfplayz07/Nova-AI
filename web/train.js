@@ -553,6 +553,20 @@
     toggle: function () { return trainer.running ? pause() : start(); },
     learnPair: learnPair,
     pushLesson: pushLesson,
+    /* Replace the lesson list (used by lookup.js when it removes or overwrites pairs). */
+    setLessons: function (list) {
+      var out = [], i, u, n;
+      if (!Array.isArray(list)) return false;
+      for (i = 0; i < list.length; i++) {
+        u = sanitize(list[i] && list[i].user);
+        n = sanitize(list[i] && list[i].nova);
+        if (u && n) out.push({ user: u, nova: n });
+      }
+      trainer.lessons = out.slice(-400);
+      trainer.text = corpus();
+      persist();
+      return true;
+    },
     teachCorrection: applyCorrection,
     isLearning: function () { return !!(trainer.learning && trainer.running); },
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
