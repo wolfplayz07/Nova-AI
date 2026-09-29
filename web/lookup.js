@@ -87,6 +87,23 @@
     return Array.isArray(p.lessons) ? p.lessons : [];
   }
 
+  /* Lesson key: sanitize like lookup does, minus trailing punctuation, so "how old are you?" and "how old are you" are one key. */
+  function lessonKey(s) {
+    return sanitize(s).replace(/[?.!,\s]+$/, "");
+  }
+
+  /* Overwrite: drop every pair with the same key, then save the new one. Exactly one pair per key afterwards. */
+  function replaceLesson(user, nova) {
+    var key = lessonKey(user), reply = sanitize(nova);
+    if (!key || !reply) return false;
+    var kept = lessonsFromStore().filter(function (l) {
+      return !(l && lessonKey(l.user) === key);
+    });
+    kept.push({ user: key, nova: reply });
+    saveLessons(kept);
+    return true;
+  }
+
   function readFacts() {
     try { return JSON.parse(localStorage.getItem(FACTS) || "{}") || {}; }
     catch (e) { return {}; }
@@ -397,15 +414,7 @@
       clearPending();
       return msg || ("got it. next time i'll say: " + sanitize(answer));
     }
-    (function () {
-      var lessons = lessonsFromStore();
-      var q = sanitize(pend.question), a = sanitize(answer), i;
-      for (i = lessons.length - 1; i >= 0; i--) {
-        if (sanitize(lessons[i].user) === q) lessons.splice(i, 1);
-      }
-      lessons.push({ user: q, nova: a });
-      writeLessons(lessons);
-    })();
+    replaceLesson(pend.question, answer);
     clearPending();
     if (pend.term) return "saved your meaning of " + pend.term + ".";
     return "got it. next time i'll say: " + sanitize(answer);
@@ -418,14 +427,13 @@
     var lower = raw.toLowerCase();
     var m = lower.match(/^when i say (.+?) say (.+)$/);
     if (m) {
-      var lessons = lessonsFromStore();
       var reply = sanitize(m[2]);
       var yn = isYesNoQuestion(m[1]) ? normYesNo(m[2]) : null;
       if (yn) reply = yn;
-      lessons.push({ user: sanitize(m[1]), nova: reply });
-      writeLessons(lessons);
-      clearPending();
-      return "lesson saved.";
+      if (replaceLesson(m[1], reply)) {
+        clearPending();
+        return "lesson saved.";
+      }
     }
     m = lower.match(/^lock\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
     if (m && saveLocked(m[1], m[2])) {
