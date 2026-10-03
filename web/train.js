@@ -370,6 +370,90 @@
     return good < Math.max(1, Math.ceil(words.length * 0.45));
   }
 
+  /* Start/stop/learn phrases the chat box treats as commands, not answers. */
+  function isLearnCommand(s) {
+    var t = String(s || "").toLowerCase().trim().replace(/[.!?]+$/g, "").trim();
+    return /^(train|train a little|start training|start learning|learn from me|start learn|learn|pause|stop|pause train|stop train|stop training|stop learning|pause learning|stop learn)$/.test(t);
+  }
+
+  /* Words the char model was actually shown: base text, canned lines, lessons, reading.
+     Untrained argmax otherwise emits tokens like "tzz52" that looksGibberish allows. */
+  function rememberWords(set, s) {
+    var parts = sanitize(s).split(" ");
+    var i, w;
+    for (i = 0; i < parts.length; i++) {
+      w = parts[i].replace(/[^a-z']/g, "").replace(/'/g, "");
+      if (w) set[w] = 1;
+    }
+  }
+
+  function knownWords() {
+    var set = {};
+    var i;
+    rememberWords(set, BASE);
+    for (i = 0; i < CANNED.length; i++) {
+      rememberWords(set, CANNED[i].user);
+      rememberWords(set, CANNED[i].nova);
+    }
+    for (i = 0; i < trainer.lessons.length; i++) {
+      rememberWords(set, trainer.lessons[i].user);
+      rememberWords(set, trainer.lessons[i].nova);
+    }
+    if (trainer.reading) rememberWords(set, trainer.reading);
+    return set;
+  }
+
+  /* Reject digit soup, stuck keys, and any word the brain has not been shown. */
+  function letterSoup(s) {
+    var raw = String(s || "").toLowerCase().trim();
+    var words, i, w, core, known;
+    if (!raw) return true;
+    if (/[0-9]/.test(raw)) return true;
+    if (/(.)\1\1/.test(raw)) return true;
+    known = knownWords();
+    words = raw.split(/\s+/);
+    for (i = 0; i < words.length; i++) {
+      w = words[i].replace(/^[^a-z']+|[^a-z']+$/g, "");
+      if (!w || !/^[a-z']+$/.test(w)) return true;
+      core = w.replace(/'/g, "");
+      if (!core || core.length > 14) return true;
+      if (!known[core]) return true;
+    }
+    return false;
+  }
+
+  function acceptGenerated(s) {
+    var t = String(s || "").replace(/\s+/g, " ").trim();
+    if (!t) return false;
+    if (looksGibberish(t)) return false;
+    if (isUnknownReply(t)) return false;
+    if (isLearnCommand(t)) return false;
+    if (letterSoup(t)) return false;
+    return true;
+  }
+
+  /* Last 3-4 saved lessons as you/nova lines, then the open question. Not the whole corpus. */
+  function lessonSeed(text) {
+    var lessons = trainer.lessons || [];
+    var start = Math.max(0, lessons.length - 4);
+    var i, lines = "";
+    for (i = start; i < lessons.length; i++) {
+      lines += "you: " + lessons[i].user + "\nnova: " + lessons[i].nova + "\n";
+    }
+    lines += "you: " + sanitize(text) + "\nnova: ";
+    return lines;
+  }
+
+  function tryGenerate(text) {
+    var fn, out;
+    if (!global.NovaTrain || typeof global.NovaTrain.generate !== "function") return null;
+    fn = global.NovaTrain.generate;
+    try { out = fn(lessonSeed(text)); }
+    catch (e) { return null; }
+    if (!acceptGenerated(out)) return null;
+    return String(out).replace(/\s+/g, " ").trim();
+  }
+
   function lookupReply(text) {
     var q = sanitize(text);
     var i, u;
@@ -570,11 +654,22 @@
     teachCorrection: applyCorrection,
     isLearning: function () { return !!(trainer.learning && trainer.running); },
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
+    generate: generate,
+    looksGibberish: looksGibberish,
+    lessonSeed: lessonSeed,
+    acceptGenerated: acceptGenerated,
+    tryGenerate: tryGenerate,
     talk: function (t) {
       var hit = lookupReply(t);
+      var guessed;
       if (hit) {
         trainer.pendingUnknown = null;
         return hit;
+      }
+      guessed = tryGenerate(t);
+      if (guessed) {
+        trainer.pendingUnknown = null;
+        return guessed;
       }
       trainer.pendingUnknown = sanitize(t);
       return "i do not know.";

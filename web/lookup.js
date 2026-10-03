@@ -480,15 +480,21 @@
       setPending({ question: text, term: null, kind: "yn" });
       return "yes or no?";
     }
-    if (looksLikeQuestion(text)) {
-      setPending({ question: text, term: null });
-      return "i do not know.";
+    /* Lookup already missed. Same generate-or-IDK path for questions and other lines.
+       Do not call origTalk: its lesson match is looser than wh-substring rules. */
+    return generateOrUnknown(text);
+  }
+
+  function generateOrUnknown(text) {
+    var T = global.NovaTrain;
+    var guessed = null;
+    if (T && typeof T.tryGenerate === "function") {
+      try { guessed = T.tryGenerate(text); }
+      catch (e) { guessed = null; }
     }
-    if (typeof origTalk === "function") {
-      var guessed = origTalk(text);
-      if (guessed && String(guessed).trim() && !/^still learning\.?$/i.test(String(guessed).trim())) {
-        return guessed;
-      }
+    if (guessed && String(guessed).trim()) {
+      clearPending();
+      return String(guessed).replace(/\s+/g, " ").trim();
     }
     setPending({ question: text, term: null });
     return "i do not know.";
