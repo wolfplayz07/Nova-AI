@@ -26,7 +26,7 @@ function makeEl() {
 }
 
 export function boot(opts = {}) {
-  const files = opts.files || ["train.js", "lookup.js", "app.js", "math-boot.js"];
+  const files = opts.files || ["train.js", "lookup.js", "app.js", "word-math.js", "math-boot.js"];
   const mem = new Map(Object.entries(opts.seed || {}));
   const localStorage = {
     getItem: (k) => (mem.has(k) ? mem.get(k) : null),
