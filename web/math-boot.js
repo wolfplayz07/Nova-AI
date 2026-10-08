@@ -197,6 +197,12 @@
     function wrapped(text) {
       var hit = novaMath(text);
       if (hit) return hit;
+      /* v42: word problems (word-math.js) right after plain math; null falls through unchanged. */
+      if (typeof window.novaWordMath === "function") {
+        var word = null;
+        try { word = window.novaWordMath(text); } catch (e) { word = null; }
+        if (word) return word;
+      }
       return orig(text);
     }
     wrapped._math = true;
