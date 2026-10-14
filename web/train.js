@@ -656,6 +656,7 @@
     sample: function () { return generate("the ", 40, 0.6) || "(empty)"; },
     generate: generate,
     looksGibberish: looksGibberish,
+    knownWords: knownWords,
     lessonSeed: lessonSeed,
     acceptGenerated: acceptGenerated,
     tryGenerate: tryGenerate,

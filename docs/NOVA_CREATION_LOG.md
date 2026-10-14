@@ -104,3 +104,44 @@ All 41 tests pass: the 10 new word-problem tests plus every earlier test for tea
 - **Comparisons:** "how many more does Mary have than Jon?"
 - **If-then chains:** longer stories where one step depends on another.
 - **Time and money:** minutes and hours, dollars and cents, and making change.
+
+---
+
+## 2026-10-13 — v43: the new-word index ("building blocks")
+
+**What it does**
+
+Nova now quietly keeps a list of every word you use that it doesn't know yet. For each word it remembers how many times you've said it, when it first and last heard it, and up to three of your sentences where it came up. It does *not* guess what the words mean. It just keeps them, like a pile of building blocks waiting to be labelled.
+
+**Why**
+
+This was the creator's own idea. A tiny AI can't learn everything at once, but it can notice what it's missing. Keeping the list means Nova knows *which* words matter most to the person talking to it, while staying honest: it still says "i do not know" instead of making something up.
+
+**How it works**
+
+- Every line you send is split into words.
+- A word counts as "known" if Nova has seen it in its base text, its built-in replies, your lessons, your saved meanings, things you've had it read, or a short list of everyday words like "the" and "is".
+- Numbers, number words, single letters, web links, very long tokens, command words, and "skip" lines are ignored.
+- Anything left over goes on the list. When you teach Nova a word (by answering "what does it mean", "lock", "edit", "means", or "when i say"), it drops off the list.
+- The list never changes what Nova replies. Everything else works exactly as in v42.
+
+**The commands**
+
+| You say | Nova does |
+|---|---|
+| what words don't you know / new words | Lists up to 10 unknown words by count, e.g. "words i do not know yet: reactor (3), zorp (1)..." |
+| teach me new words / ask me a word | Asks about your most-used one: 'you have said "reactor" 3 times. what does reactor mean?' Your next line saves the meaning. "skip" cancels. |
+| forget new words | Clears the list. |
+
+Nova only asks when you tell it to. No nagging.
+
+**Tests**
+
+All 50 tests pass (`node --test tests/`): the 41 earlier ones plus 9 new ones. The new ones check counting and example sentences, the words that must be skipped, the list, ask and forget commands, skip, every way of teaching a word, and that replies come out exactly the same with the list on or off.
+
+**Demo clip:** `/workspace/nova-demo/v43_demo.mp4`
+
+**What's next**
+
+- Optional gentle prompts, where Nova might offer once in a while to learn your top word (only if the creator wants that).
+- Sharing the list and lessons between the Jarvis app and Nova, since each Home Screen app keeps its own memory right now.
