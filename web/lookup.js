@@ -532,6 +532,17 @@
     T._exactLookup = true;
   }
 
+  /* v43: read-only helpers for new-words.js (the what-is pending slot and facts). */
+  global.NovaLookup = {
+    setPending: setPending,
+    getPending: getPending,
+    readFacts: readFacts,
+    sanitize: sanitize,
+    cancelPending: cancelPending,
+    canned: function () { return CANNED; },
+    lessons: lessonsFromStore
+  };
+
   wrap();
   document.addEventListener("DOMContentLoaded", wrap);
 })(window);

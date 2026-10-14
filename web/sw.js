@@ -1,4 +1,4 @@
-const CACHE = "nova-local-v42";
+const CACHE = "nova-local-v43";
 
 self.addEventListener("install", function () {
   self.skipWaiting();
