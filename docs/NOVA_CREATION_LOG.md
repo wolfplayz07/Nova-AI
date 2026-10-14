@@ -145,3 +145,5 @@ All 50 tests pass (`node --test tests/`): the 41 earlier ones plus 9 new ones. T
 
 - Optional gentle prompts, where Nova might offer once in a while to learn your top word (only if the creator wants that).
 - Sharing the list and lessons between the Jarvis app and Nova, since each Home Screen app keeps its own memory right now.
+
+- **2026-10-14 · Jarvis safety test.** Nova now has a test that boots it the way the Jarvis app does and checks that it still answers ("what is 25% of 200" gives "50.") and still learns, so a Nova update can't quietly break Jarvis.
