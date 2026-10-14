@@ -47,6 +47,7 @@ export function boot(opts = {}) {
     navigator: { language: "en-US" },
     alert() {}, confirm() { return true; }, prompt() { return null; }
   };
+  Object.assign(ctx, opts.globals || {});
   ctx.window = ctx;
   ctx.self = ctx;
   vm.createContext(ctx);
