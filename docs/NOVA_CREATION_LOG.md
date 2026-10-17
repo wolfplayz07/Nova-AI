@@ -147,3 +147,36 @@ All 50 tests pass (`node --test tests/`): the 41 earlier ones plus 9 new ones. T
 - Sharing the list and lessons between the Jarvis app and Nova, since each Home Screen app keeps its own memory right now.
 
 - **2026-10-14 · Jarvis safety test.** Nova now has a test that boots it the way the Jarvis app does and checks that it still answers ("what is 25% of 200" gives "50.") and still learns, so a Nova update can't quietly break Jarvis.
+
+---
+
+## 2026-10-17 — v44: offline dictionary
+
+**What it does**
+
+When you ask about a word Nova has no meaning for, it now looks the word up in a dictionary stored with the app and says so plainly: *"dictionary says: river (noun): a large natural stream of water (larger than a creek). want me to remember it?"* Say **yes** and it saves that as your meaning. Say **no** or **skip** and nothing is saved.
+
+**Why**
+
+The creator approved it. Nova only knew words it had been taught. Now it can tell you what a dictionary says, without ever pretending the meaning is its own knowledge, and you decide whether it keeps it.
+
+**How it works**
+
+- The dictionary is Princeton WordNet 3.0 (free, WordNet license, credited in the README and `web/dict/LICENSE-WordNet.txt`), cut down to the first one or two meanings of each word plus its part of speech.
+- It's about 151,000 words in 550 small files, split by the first two letters (13.6 MB total, the biggest file under 0.5 MB). Nova loads only the one file it needs, when it needs it.
+- The phone keeps every file it has used, so those words work offline. **download dictionary** keeps all of them.
+- Order: math, word problems, your locked and saved meanings, your lessons, then the dictionary, then the old "i do not know X. what do you mean by it?" plus Skip when the dictionary has nothing.
+- Simple plurals work ("cats" finds cat, "mice" finds mouse). **what else** gives the second meaning.
+- **teach me new words** now offers the dictionary meaning of your most-used unknown word for a yes or no.
+- After **stop learning**, Nova still looks words up but doesn't offer to save. **start learning** turns the offer back on.
+- Dictionary replies are never stored as lessons.
+
+**Tests**
+
+All 65 tests pass (`node --test tests/`): the 52 earlier ones, including the Jarvis safety test, plus 13 new ones. The new ones cover yes, no and skip, every way of asking, facts beating the dictionary, the fallback when a word isn't there or the files can't load, stop learning, no dictionary lessons, the new-word offer, loading one file at a time, and file sizes and the license.
+
+**Demo clip:** `/workspace/nova-demo/v44_demo.mp4`
+
+**What's next**
+
+- Optional: Nova could offer the dictionary meaning on its own for words it keeps hearing (part of the self-learning plan).

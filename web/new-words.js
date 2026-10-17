@@ -19,7 +19,8 @@
     "million billion first second third half dozen").split(/\s+/);
   /* Owner-command keywords themselves are never indexed. */
   var CMD = ("train training learn learning pause stop sample speak brain export reset wipe status memory remember " +
-    "lock edit define teach means read fix skip cancel nevermind forget words word").split(/\s+/);
+    "lock edit define teach means read fix skip cancel nevermind forget words word " +
+    "look lookup dictionary download meaning mean").split(/\s+/);
   var SKIP_SET = {};
   STOP.concat(NUMWORDS, CMD).forEach(function (w) { SKIP_SET[w] = 1; });
 
@@ -124,6 +125,16 @@
     if (/^(teach me new words|ask me a word|ask me about a word|ask me a new word)$/.test(q)) {
       var first = ranked()[0];
       if (!first) return "no new words yet.";
+      var lead = "you have said \"" + first.word + "\" " + first.count + " time" + (first.count === 1 ? "" : "s") + ". ";
+      /* v44: offer the offline dictionary meaning for a yes/no confirmation when there is one. */
+      if (global.NovaDict && typeof global.NovaDict.offer === "function" && global.NovaDict.saving()) {
+        var d = null;
+        try { d = global.NovaDict.offer(first.word, lead); } catch (e) { d = null; }
+        if (d) {
+          if (global.NovaLookup && global.NovaLookup.clearPending) global.NovaLookup.clearPending();
+          return d;
+        }
+      }
       if (global.NovaLookup && global.NovaLookup.setPending) {
         global.NovaLookup.setPending({ question: "what is " + first.word, term: first.word });
       }

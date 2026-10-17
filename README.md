@@ -56,6 +56,27 @@ Just say the answer on the next line (or `Say no`, `the answer is …`). Nova sa
 
 If Web Speech API works in your Safari Home Screen build, tap **mic**. If not, the button explains: use the **keyboard dictation mic**, then Send — same learn ON/OFF path. We do not fake speech recognition.
 
+## Offline dictionary (v44)
+
+Ask about a word Nova has no meaning for and it checks a dictionary stored with the app. It never pretends the meaning is its own:
+
+```
+what is a river        -> dictionary says: river (noun): a large natural stream of water (larger than a creek). want me to remember it?
+yes                    -> saved. river means ...      (saved as your meaning; no / skip saves nothing)
+define bank / what does bank mean / look up bank / what is the meaning of bank
+what else              -> the dictionary's second meaning, if it has one
+teach me new words     -> offers the dictionary meaning of your most-used unknown word
+download dictionary    -> keeps every part on this phone so lookups work offline (about 14 MB)
+```
+
+Your locked and saved meanings always win over the dictionary. If the dictionary has no entry, Nova asks what you mean (Skip works as before). After `stop learning` it still looks words up but does not offer to save; `start learning` turns the offer back on.
+
+Data: `web/dict/*.json`, 550 small files sharded by the first two letters (about 13.6 MB, ~151,000 words, first 1–2 senses with part of speech), loaded one file at a time when needed. Built with `python3 tools/build-dict.py <WordNet-3.0/dict> web/dict`.
+
+### Dictionary credit and license
+
+Definitions come from **Princeton WordNet 3.0** — *WordNet 3.0 Copyright 2006 by Princeton University. All rights reserved.* Used under the WordNet license, which allows use, copying, modification and distribution without fee provided the copyright notice, statements and disclaimer appear on all copies. The full license text is in [`web/dict/LICENSE-WordNet.txt`](web/dict/LICENSE-WordNet.txt). See https://wordnet.princeton.edu/. Princeton University does not endorse this app.
+
 ## What this is
 
 **v7** is a 64-unit GRU character model on-device. It will not talk like Grok. Brain checkpoints stay in localStorage + IndexedDB (OPFS when available). No cloud weights.

@@ -256,7 +256,7 @@
   function unknownTerm(text) {
     var q = factQ(text);
     if (/\bmy\b/.test(q) && /definition|meaning/.test(q)) return null;
-    var m = q.match(/^(?:what does|whats|what is|define|meaning of)\s+(.+?)(?:\s+mean)?$/);
+    var m = q.match(/^(?:what does|whats the meaning of|what is the meaning of|whats|what is|define|meaning of|look up|lookup)\s+(.+?)(?:\s+mean)?$/);
     if (!m) return null;
     var word = m[1].replace(/^a |^an |^the /, "").replace(/\s+mean$/, "").trim();
     if (!word || word.split(" ").length > 4) return null;
@@ -473,6 +473,9 @@
     if (hit) return hit;
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
+      /* v44: offline dictionary, only when there is no locked/user fact or lesson. */
+      var dict = dictionaryOffer(term);
+      if (dict) return dict;
       setPending({ question: text, term: term });
       return "i do not know " + term + ". what do you mean by it?";
     }
@@ -483,6 +486,14 @@
     /* Lookup already missed. Same generate-or-IDK path for questions and other lines.
        Do not call origTalk: its lesson match is looser than wh-substring rules. */
     return generateOrUnknown(text);
+  }
+
+  function dictionaryOffer(term) {
+    var D = global.NovaDict, out = null;
+    if (!D || typeof D.offer !== "function") return null;
+    try { out = D.offer(term); } catch (e) { out = null; }
+    if (out) clearPending();
+    return out;
   }
 
   function generateOrUnknown(text) {
@@ -540,6 +551,9 @@
     sanitize: sanitize,
     cancelPending: cancelPending,
     canned: function () { return CANNED; },
+    saveUser: saveUser,
+    spokenMeaning: spokenMeaning,
+    clearPending: clearPending,
     lessons: lessonsFromStore
   };
 
