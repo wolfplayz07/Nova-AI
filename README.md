@@ -77,6 +77,17 @@ Data: `web/dict/*.json`, 550 small files sharded by the first two letters (about
 
 Definitions come from **Princeton WordNet 3.0** — *WordNet 3.0 Copyright 2006 by Princeton University. All rights reserved.* Used under the WordNet license, which allows use, copying, modification and distribution without fee provided the copyright notice, statements and disclaimer appear on all copies. The full license text is in [`web/dict/LICENSE-WordNet.txt`](web/dict/LICENSE-WordNet.txt). See https://wordnet.princeton.edu/. Princeton University does not endorse this app.
 
+## Math misses (v45)
+
+When you ask something that looks like a math word problem and Nova can't solve it, it notes the line on this phone so you can see what to teach or fix next. It never changes its own solver, and it never changes a reply.
+
+```
+math misses / what math couldn't you do / show math misses   -> lists the last 10, newest first, with how many times
+clear math misses                                              -> empties the list
+```
+
+Nothing is noted after `stop learning`, until `start learning`. For developers, `tests/math-generated.test.mjs` checks the solvers against 4,000 self-generated problems with known answers (fixed seed).
+
 ## What this is
 
 **v7** is a 64-unit GRU character model on-device. It will not talk like Grok. Brain checkpoints stay in localStorage + IndexedDB (OPFS when available). No cloud weights.
