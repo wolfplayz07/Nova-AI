@@ -65,3 +65,11 @@ test("bridge ask(): a new question after 'i do not know' is not saved as the ans
   assert.equal(ask("what is 25% of 200"), "50.");
   done(n);
 });
+
+test("bridge ask(): what is my favorite color reads the saved memory (v47)", () => {
+  const n = bootPage();
+  const ask = vm.runInContext(ASK_SRC, n.ctx);
+  assert.match(ask("remember my favorite color is blue"), /^Got it\. Saved "favorite color"/);
+  assert.equal(ask("what is my favorite color"), "your favorite color is blue.");
+  done(n);
+});
