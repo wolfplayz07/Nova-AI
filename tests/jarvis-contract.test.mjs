@@ -73,3 +73,11 @@ test("bridge ask(): what is my favorite color reads the saved memory (v47)", () 
   assert.equal(ask("what is my favorite color"), "your favorite color is blue.");
   done(n);
 });
+
+test("bridge ask(): 'should i ...' is not answered with 'yes or no?' (v48)", () => {
+  const n = bootPage();
+  const ask = vm.runInContext(ASK_SRC, n.ctx);
+  assert.equal(ask("should i learn python or javascript first"), "i do not know.");
+  assert.equal(ask("can you count"), "yes or no?");
+  done(n);
+});

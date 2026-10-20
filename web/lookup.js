@@ -154,6 +154,8 @@
 
   function isYesNoQuestion(text) {
     var q = sanitize(text);
+    /* v48: "should I / should we ..." asks for advice, not a yes or no. */
+    if (/^should (?:i|we)\b/.test(q)) return false;
     return /^(can|could|do|does|did|is|are|am|will|would|should|have|has|may)\b/.test(q);
   }
 
