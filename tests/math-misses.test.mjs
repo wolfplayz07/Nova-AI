@@ -8,7 +8,7 @@ const BASE = ["train.js", "lookup.js", "app.js", "word-math.js", "math-boot.js",
 const start = () => boot({ files: [...BASE, "math-misses.js"] });
 const log = (n) => JSON.parse(n.localStorage.getItem("nova-math-misses-v1") || '{"misses":[]}').misses;
 const PIZZA = "A pizza has 8 slices. 3 people eat 2 slices each. How many slices are left?";
-const TRAIN = "a train goes 60 miles per hour for 2 hours. how far?";
+const TRAIN = "Jon has 5 apples and Mary has 8 apples. how many more does Mary have than Jon?"; /* comparison: unsupported */
 
 test("unsolved word problems are logged; 'math misses' lists newest first with counts", () => {
   const n = start();
@@ -41,7 +41,7 @@ test("solved math and non-math lines are not logged", () => {
 
 test("replies are exactly the same with and without the log", () => {
   const lines = [PIZZA, "skip", "what is a zorp", "skip", "Sam has 3 bags with 4 apples each. How many apples does he have?",
-    TRAIN, "120 miles", "can you count", "yes", "hello"];
+    TRAIN, "3 more", "can you count", "yes", "hello"];
   const a = boot({ files: BASE }), b = start();
   for (const l of lines) assert.equal(b.say(l), a.say(l), l);
   a.stop(); b.stop();
@@ -50,8 +50,8 @@ test("replies are exactly the same with and without the log", () => {
 test("teach answers and owner commands with numbers are not logged", () => {
   const n = start();
   n.say(TRAIN);
-  assert.match(n.say("120 miles in total"), /^got it/);
-  assert.equal(n.say(TRAIN), "120 miles in total", "the creator's lesson answers next time");
+  assert.match(n.say("3 more in total"), /^got it/);
+  assert.equal(n.say(TRAIN), "3 more in total", "the creator's lesson answers next time");
   n.say("when i say 3 kids each get 2 say 6 in total");
   n.say("lock dozen as 12 eggs each");
   n.say("half means 1 of 2 equal parts");
@@ -75,9 +75,9 @@ test("stop learning: no logging until start learning", () => {
 test("log is capped at 50, repeats bump the count, and lists are never saved as lessons", () => {
   const n = start();
   n.say("start learning");
-  for (let i = 0; i < 55; i++) { n.say(`a car goes ${i + 10} miles per hour for 2 hours. how far?`); n.say("skip"); }
+  for (let i = 0; i < 55; i++) { n.say(`Jon has ${i + 10} apples and Mary has 8 apples. how many more does Jon have than Mary?`); n.say("skip"); }
   assert.equal(log(n).length, 50);
-  assert.match(n.say("math misses"), /^math i could not do yet: "a car goes 64 miles/);
+  assert.match(n.say("math misses"), /^math i could not do yet: "Jon has 64 apples/);
   assert.ok(!n.lessons().some((l) => /math i could not do|math misses/.test(l.nova + l.user)));
   n.say("stop learning");
   n.stop();

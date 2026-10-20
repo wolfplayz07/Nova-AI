@@ -81,3 +81,13 @@ test("bridge ask(): 'should i ...' is not answered with 'yes or no?' (v48)", () 
   assert.equal(ask("can you count"), "yes or no?");
   done(n);
 });
+
+test("bridge ask(): word problems use an ordered running total, cents and rates (v49)", () => {
+  const n = bootPage();
+  const ask = vm.runInContext(ASK_SRC, n.ctx);
+  assert.equal(ask("if i have 3 apples and buy 5 more then eat 2 how many do i have"), "You have 6 apples now.");
+  assert.equal(ask("a train goes 60 miles per hour for 2.5 hours. how far does it go?"), "That is 150 miles in 2.5 hours.");
+  assert.equal(ask("Ann has 5 dollars and spends 2 dollars 50 cents. How much is left?"), "Ann has 2.50 dollars left.");
+  assert.equal(ask("what is 25% of 200"), "50.");
+  done(n);
+});
