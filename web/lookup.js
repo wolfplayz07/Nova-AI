@@ -348,6 +348,21 @@
     return startsLikeQuestion(text);
   }
 
+  /* v46: is this line a new question (not an answer to the pending teach)? wh-word or aux start, a "?",
+     "so/and/ok should I / can you ...", or a question clause after a comma (", is tom an animal").
+     Lines that start with yes/no are answers even with a "?" (approved v36 behavior). */
+  var AUXQ = "(?:is|are|am|was|were|can|could|do|does|did|should|would|will|shall|may|might|have|has)";
+  function isNewQuestion(text) {
+    var raw = String(text || "").toLowerCase().replace(/\u2019/g, "'").trim(), q = sanitize(text);
+    if (!q) return false;
+    if (normYesNo(text) || /^(yes|no|yeah|yep|yup|yea|nope|nah)\b/.test(q)) return false;
+    if (raw.indexOf("?") !== -1) return true;
+    if (startsLikeQuestion(text)) return true;
+    if (new RegExp("^(?:so|and|but|then|ok|okay|well|hey|now|also|nova|jarvis),? " + AUXQ + " (?:i|you|we)\\b").test(q)) return true;
+    if (new RegExp(", (?:" + AUXQ + " [a-z]+|what|who|where|when|why|how|which)\\b").test(raw.replace(/\s+/g, " "))) return true;
+    return false;
+  }
+
   function ingestRead(raw) {
     var body = String(raw || "").replace(/^read\s+/i, "");
     var lines = body.split(/[\n.;]+/);
@@ -407,7 +422,8 @@
     if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
-    if (startsLikeQuestion(text) && !isExplicitTeachPhrase(text) && !normYesNo(text)) {
+    /* v46: a line that is itself a new question replaces the pending slot instead of being saved as the answer. */
+    if (isNewQuestion(text) && !isExplicitTeachPhrase(text)) {
       term = unknownTerm(text);
       setPending({ question: text, term: term });
       return null;
@@ -550,6 +566,7 @@
     readFacts: readFacts,
     sanitize: sanitize,
     cancelPending: cancelPending,
+    isNewQuestion: isNewQuestion,
     canned: function () { return CANNED; },
     saveUser: saveUser,
     spokenMeaning: spokenMeaning,

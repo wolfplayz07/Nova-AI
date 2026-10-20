@@ -55,3 +55,13 @@ test("bridge ask(): math, teach on 'i do not know', recall, chat restored", () =
   assert.equal(vm.runInContext("state.conversations.filter(c => c.jarvis).length", n.ctx), 1);
   done(n);
 });
+
+test("bridge ask(): a new question after 'i do not know' is not saved as the answer (v46)", () => {
+  const n = bootPage();
+  const ask = vm.runInContext(ASK_SRC, n.ctx);
+  assert.match(ask("what is a zorp"), /^i do not know zorp\./);
+  assert.doesNotMatch(ask("if all cats are animals and tom is a cat, is tom an animal"), /^got it|^saved/);
+  assert.match(ask("what is a zorp"), /^i do not know zorp\./);
+  assert.equal(ask("what is 25% of 200"), "50.");
+  done(n);
+});

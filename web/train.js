@@ -532,6 +532,8 @@
     if (/\?$/.test(lower)) return false;
     if (/^(when i say|remember|read |start |stop |train|learn|pause|export|reset|sample)\b/.test(lower)) return false;
     if (isLearningMeta(lower)) return false;
+    /* v46: a new question is not an answer. */
+    try { if (global.NovaLookup && global.NovaLookup.isNewQuestion && global.NovaLookup.isNewQuestion(raw)) return false; } catch (e) {}
     words = lower.split(/\s+/).filter(Boolean);
     if (!words.length || words.length > 6) return false;
     if (/^(what|who|where|when|why|how|can|do|does|did|is|are|will|would|could|should)\b/.test(lower)) return false;
