@@ -1,4 +1,4 @@
-const CACHE = "nova-local-v50";
+const CACHE = "nova-local-v51";
 /* v44: dictionary shards (web/dict/*.json) never change within a dictionary build, so they live
    in their own cache that survives app version bumps. Rename DICT_CACHE when the shards are rebuilt. */
 const DICT_CACHE = "nova-dict-wn30-v1";
