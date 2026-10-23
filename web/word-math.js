@@ -92,6 +92,10 @@
     if (W.nouns[key]) return key;
     var a = phrase.split(" "), one, many;
     if (typedPlural) { many = phrase; a[a.length - 1] = singular(a[a.length - 1]); one = a.join(" "); }
+    else if (singular(a[a.length - 1]) !== a[a.length - 1] && !SAME[a[a.length - 1]]) {
+      /* v49: "1 eggs" was typed plural anyway: keep it, do not make "eggses". */
+      many = phrase; a[a.length - 1] = singular(a[a.length - 1]); one = a.join(" ");
+    }
     else { one = phrase; a[a.length - 1] = plural(a[a.length - 1]); many = a.join(" "); }
     W.nouns[key] = { one: one, many: many };
     return key;
@@ -124,8 +128,50 @@
     return q;
   }
 
+  /* v49: money as decimal dollars. "$2.50", "2 dollars 50 cents", "2 dollars and 50 cents" -> "2.5 dollars";
+     a lone "50 cents" becomes "0.5 dollars" only when the story also talks about dollars. */
+  function money(q) {
+    q = q.replace(/\$\s?(\d+(?:\.\d+)?)(?: dollars?| bucks?)?/g, "$1 dollars");
+    q = q.replace(/\b(\d+) (?:dollars?|bucks?),? (?:and )?(\d{1,2}) cents?\b/g, function (m, d, c) {
+      return String(Math.round((parseInt(d, 10) + parseInt(c, 10) / 100) * 100) / 100) + " dollars";
+    });
+    if (/\bdollars?\b/.test(q)) {
+      q = q.replace(/\b(\d+) cents?\b/g, function (m, c) { return String(parseInt(c, 10) / 100) + " dollars"; });
+    }
+    q = q.replace(/\b(\d+(?:\.\d+)?) bucks?\b/g, "$1 dollars");
+    /* "buys a toy for 3.75 dollars" spends money; the toy is not what is being counted. */
+    q = q.replace(/\b(?:buys?|bought|purchases?|purchased|pays? for|paid for|gets?|got) (?:a |an |the |one |1 )?([a-z]+(?: [a-z]+)?) for (\d+(?:\.\d+)?) dollars?\b/g, "spends $2 dollars");
+    return q;
+  }
+
+  function isMoney(obj) { return /(^| )dollar$/.test(String(obj || "")); }
+  function fmtAmt(n, obj) {
+    if (isMoney(obj) && Math.abs(n - Math.round(n)) >= 1e-9) return (Math.round(n * 100) / 100).toFixed(2);
+    return fmtNum(n);
+  }
+
+  /* v49: simple rates. "60 miles per hour for 2.5 hours", "8 dollars an hour for 5 hours",
+     "20 pages each day for 7 days", "2.5 per hour for 3 hours". The time units must match. */
+  var UNIT = "second|minute|hour|day|week|month|year|night|lap|trip|game|class|lesson|mile|km|kilometer";
+  var RE_RATE = new RegExp("(\\d+(?:\\.\\d+)?)(?: ([a-z]+(?: [a-z]+)?))? (?:per|an|a|each|every) (" + UNIT + ")\\b.*?\\bfor (?:the )?(?:next )?(\\d+(?:\\.\\d+)?) (" + UNIT + ")s?\\b");
+  function readRate(q) {
+    var m = q.match(RE_RATE), rate, n, noun, total, out;
+    if (!m || m[3] !== m[5]) return null;
+    noun = m[2] && !STOP[lastWord(m[2])] ? m[2] : "";
+    rate = parseFloat(m[1]); n = parseFloat(m[4]);
+    total = rate * n;
+    if (noun) {
+      var key = headOf(noun), f = { one: key, many: plural(lastWord(key)) };
+      f.many = key.split(" ").slice(0, -1).concat([plural(lastWord(key))]).join(" ");
+      noun = " " + (Math.abs(total - 1) < 1e-9 ? f.one : f.many);
+    }
+    out = "That is " + fmtAmt(total, noun ? headOf(noun.trim()) : "") + noun + " in " + fmtNum(n) + " " + (n === 1 ? m[5] : plural(m[5])) + ".";
+    return out;
+  }
+
   function normalize(text) {
     var q = String(text || "").toLowerCase().replace(/[\u2018\u2019]/g, "'");
+    q = money(q);
     q = q.replace(/'s\b/g, "").replace(/[^a-z0-9.?!,;\s-]/g, " ").replace(/-/g, " ");
     q = q.replace(/\s+/g, " ").trim();
     return numberWords(q);
@@ -146,6 +192,7 @@
     var q = normalize(low);
     var hasNum = /\d/.test(q);
     if (hasNum && RE_CUE.test(q)) return true;
+    if (hasNum && RE_RATE.test(q) && /\bhow (?:far|much|many|long)\b|\btotal\b|\bin all\b/.test(q)) return true;
     if (fresh() && /\bhow (many|much)\b/.test(q)) return true;
     return false;
   }
@@ -232,7 +279,7 @@
     if (info.before.owners[k] && info.before.owners[k].counts[obj] != null) info.touched = true;
     o.counts[obj] = (o.counts[obj] || 0) + delta;
     if (o.counts[obj] < -1e-9) {
-      info.impossible = cap(who(k)) + " only " + (k === "i" ? "had " : "had ") + fmtNum(o.counts[obj] - delta) + (obj ? " " + say(W, obj, o.counts[obj] - delta) : "") + ". that does not add up.";
+      info.impossible = cap(who(k)) + " only " + (k === "i" ? "had " : "had ") + fmtAmt(o.counts[obj] - delta, obj) + (obj ? " " + say(W, obj, o.counts[obj] - delta) : "") + ". that does not add up.";
     }
     if (obj) W.lastObject = obj;
   }
@@ -502,7 +549,7 @@
 
   function statement(W, k, obj, n, tail) {
     var thing = obj ? " " + say(W, obj, n) : "";
-    var num = fmtNum(n);
+    var num = fmtAmt(n, obj);
     if (k === "") return (n === 1 ? "There is " : "There are ") + num + thing + tail + ".";
     if (k === "i") return "You have " + num + thing + tail + ".";
     return cap(k) + " has " + num + thing + tail + ".";
@@ -528,6 +575,7 @@
       got.push(words[i]);
     }
     if (got.length) obj = headOf(got.join(" "));
+    if (!got.length && /\bhow much\b/.test(q) && W.nouns.dollar) obj = "dollar"; /* v49: how much = money */
     m = rest.match(/\b(?:does|do|did|will|would|can|could|should|has|have) (?:(?:the|a|an) )?([a-z]+)(?: [a-z]+)? (?:have|has|own|hold|get|got|keep|end up with|left|now)\b/) ||
         rest.match(/\b(?:does|do|did|will|would|can|could|should) (?:(?:the|a|an) )?([a-z]+)$/) ||
         rest.match(/\b(?:has|have) ([a-z]+) (?:got|left)\b/) ||
@@ -585,10 +633,18 @@
     if (!fresh()) S = blank();
     var W = JSON.parse(JSON.stringify(S));
     var info = { before: S, events: 0, ops: 0, touched: false, impossible: null, say: null, mul: null, divided: false };
-    var parts = clauses(normalize(text));
-    var question = null, n, c, r;
+    var norm = normalize(text);
+    if (RE_RATE.test(norm) && /\bhow (?:far|much|many|long)\b|\btotal\b|\bin all\b/.test(norm)) {
+      var rated = readRate(norm);
+      if (rated) { lastSolved = String(text || "").trim(); return rated; }
+    }
+    var parts = clauses(norm);
+    var question = null, n, c, r, hm;
     for (n = 0; n < parts.length; n++) {
       c = parts[n];
+      /* v49: ordered running total. "then eat 2 how many do i have": apply "eat 2" first, then ask. */
+      hm = c.search(/\bhow (?:many|much)\b/);
+      if (hm > 0) { parts.splice(n + 1, 0, c.slice(hm)); c = c.slice(0, hm).trim(); }
       if (/\bhow (?:many|much)\b/.test(c)) { question = c; continue; }
       r = readMultiply(W, c, info);
       if (!r) r = readDivide(W, c, info);

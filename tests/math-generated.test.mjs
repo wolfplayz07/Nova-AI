@@ -61,6 +61,24 @@ const SHAPES = {
     const p = pick([5, 10, 15, 20, 25, 30, 40, 50, 75, 80, 100, 150]), m = int(1, 80) * 10;
     return [R() < 0.5 ? `what is ${p}% of ${m}` : `${p} percent of ${m}`, fmt((p / 100) * m) + "."];
   },
+  running() { /* v49: ordered running total over several steps */
+    const o = pick(OBJ), a = int(1, 30), b = int(1, 30), c = int(1, a + b);
+    return [`if i have ${say(a)} ${o[1]} and buy ${say(b)} more then eat ${say(c)} how many do i have`, `You have ${cnt(a + b - c, o)} now.`];
+  },
+  money() { /* v49: dollars and cents */
+    const [nm] = pick(NAMES), d = int(5, 40), sd = int(0, d - 1), sc = int(1, 99);
+    const left = Math.round((d - sd - sc / 100) * 100) / 100;
+    const spend = R() < 0.5 ? `${sd} dollars ${sc} cents` : `$${sd}.${String(sc).padStart(2, "0")}`;
+    return [`${nm} has ${d} dollars and spends ${spend}. How much is left?`, `${nm} has ${left.toFixed(2)} dollars left.`];
+  },
+  rate() { /* v49: per / each x time */
+    const u = pick([["mile", "miles", "hour"], ["page", "pages", "day"], ["dollar", "dollars", "hour"]]);
+    const r = int(2, 60), t = pick([2, 3, 4, 5, 1.5, 2.5]);
+    const tot = r * t, how = u[0] === "dollar" ? "how much in total" : "how many in all";
+    const totS = u[0] === "dollar" && !Number.isInteger(tot) ? tot.toFixed(2) : fmt(tot);
+    return [`it does ${r} ${u[1]} ${pick(["per", "each", "every"])} ${u[2]} for ${t} ${u[2]}s, ${how}?`,
+      `That is ${totS} ${tot === 1 ? u[0] : u[1]} in ${fmt(t)} ${u[2]}s.`];
+  },
   plain() {
     const a = int(1, 500), b = int(1, 500), op = pick([["plus", (x, y) => x + y], ["minus", (x, y) => x - y], ["times", (x, y) => x * y]]);
     return [`what is ${a} ${op[0]} ${b}`, fmt(op[1](a, b)) + "."];
@@ -72,18 +90,17 @@ const PER_SHAPE = 500;
 const UNSUPPORTED = [
   // multi-step: a group eats N each, out of a total ("8 slices, 3 people eat 2 each")
   ["A pizza has 8 slices. 3 people eat 2 slices each. How many slices are left?", "group-each subtraction"],
-  // rates and units
-  ["a train goes 60 miles per hour for 2 hours. how far?", "rate x time"],
   // comparison questions
   ["Jon has 5 apples and Mary has 8 apples. How many more apples does Mary have than Jon?", "comparison"],
   // percent inside a story
   ["Sam has 200 cards and gives away 25 percent of them. How many are left?", "percent of a story amount"],
+  // rate with mismatched units must not guess
+  ["a car goes 50 miles per hour for 2 days, how far?", "rate units differ (hour vs day)"]
 ];
 
-/* Known WRONG answers the generator found (v42 solver). Marked todo: they run and are reported, but
-   do not fail the suite. Fix each in its own PR, then drop the todo. Nova never patches itself. */
-const KNOWN_BUGS = [
-  ["Ann has 5 dollars and spends 2 dollars 50 cents. How much is left?", "Ann has 2.5 dollars left.",
+/* v45 found these two wrong answers (were todo tests); v49 fixed them, so they are real tests now. */
+const FIXED_BUGS = [
+  ["Ann has 5 dollars and spends 2 dollars 50 cents. How much is left?", "Ann has 2.50 dollars left.",
     "cents are ignored: says 3 dollars"],
   ["Ann has 1 eggs and Mary gives her 41, how many now?", "Ann has 42 eggs now.",
     "ungrammatical '1 eggs' input: number right, plural printed as 'eggses'"]
@@ -119,8 +136,8 @@ test("known-unsupported shapes fall through (null), never a wrong number", () =>
   for (const [q, why] of UNSUPPORTED) assert.equal(solve(q), null, why + ": " + q);
 });
 
-for (const [q, want, why] of KNOWN_BUGS) {
-  test(`known bug (todo): ${why}`, { todo: true }, () => {
+for (const [q, want, why] of FIXED_BUGS) {
+  test(`fixed v45 bug: ${why}`, () => {
     const { solve } = solverFor();
     assert.equal(solve(q), want);
   });
