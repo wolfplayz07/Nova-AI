@@ -195,3 +195,10 @@ All 65 tests pass (`node --test tests/`): the 52 earlier ones, including the Jar
   - **Rates:** "60 miles per hour for 2.5 hours" gives "That is 150 miles in 2.5 hours." "20 pages each day for 7 days" and "8 dollars an hour for 5 hours" work too. If the time units don't match (per hour, for 2 days), Nova still says "i do not know" rather than guess.
   - **Plurals:** "1 eggs" no longer prints as "eggses".
   - **Tests:** the two v45 to-do tests are now real tests, and both pass. The generated test now also makes running-total, money and rate problems: 11 types × 500 = 5,500 problems, all right. Found in the Jarvis question run.
+
+- **2026-10-23 · v50: self-learning switch, journal, and auto-looked-up words (medium).**
+  - **Off switch:** a new saved setting, off by default. **learn on your own** turns it on. **stop learning** turns it and every self-learning feature off, and it stays off after closing the app until **start learning** or **learn on your own**. **self-learning status** says on or off, and **brain status** now ends with "Self-learning: on/off."
+  - **Journal:** **what did you learn on your own** reads back the last 8 things Nova did by itself, with dates. **clear journal** empties it. Nothing happens silently.
+  - **Auto words:** while on, a word the creator has said 2 or more times that Nova doesn't know gets looked up in the offline dictionary (one per turn) and noted in the journal. At a calm moment (at most once a day, 20+ turns apart, never during "i do not know", "yes or no?", a what-is prompt, math, or a command) Nova adds one "by the way" line after its real answer and asks whether to remember the dictionary meaning. Only **yes** saves it. **skip** or **no** snoozes that word for 7 days. **don't ask me words** stops the asking.
+  - Off by default, so replies are unchanged until the creator turns it on. "by the way" lines are never saved as lessons.
+  - **Tests:** 7 new; all 111 pass. **Demo:** `/workspace/nova-demo/v50_demo.mp4`.
