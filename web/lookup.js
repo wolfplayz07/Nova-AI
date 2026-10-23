@@ -154,6 +154,8 @@
 
   function isYesNoQuestion(text) {
     var q = sanitize(text);
+    /* v48: "should I / should we ..." asks for advice, not a yes or no. */
+    if (/^should (?:i|we)\b/.test(q)) return false;
     return /^(can|could|do|does|did|is|are|am|will|would|should|have|has|may)\b/.test(q);
   }
 
@@ -283,6 +285,35 @@
     }
     if (kept.length !== lessons.length) saveLessons(kept);
     return lessons.length - kept.length;
+  }
+
+  /* v47: "what is my favorite color" / "what's my name" reads what the creator saved, before the
+     dictionary or the what-is prompt: "remember my X is Y" memories (app.js state.memories), then
+     "my WORD" / "WORD means" facts (user slot, as "my WORD" already does), then a meaning saved
+     earlier for "my X" through the what-is prompt. null when nothing is saved. */
+  function savedMemories() {
+    try { if (typeof state !== "undefined" && state && state.memories) return state.memories; } catch (e) {}
+    try {
+      var raw = JSON.parse(localStorage.getItem("nova-local-v1") || "null");
+      if (raw && raw.memories) return raw.memories;
+    } catch (e2) {}
+    return {};
+  }
+
+  function recallMine(text) {
+    var q = factQ(text).replace(/^what's /, "whats ");
+    var m = q.match(/^(?:what is|whats|what are|tell me|say) my (.+)$/), key, mem, k, e;
+    if (!m) return null;
+    key = m[1].replace(/^(?:own) /, "").trim();
+    if (!key || /^(definition|meaning) of /.test(key)) return null;
+    mem = savedMemories();
+    if (/(^| )name$/.test(key) && mem.name) return "your name is " + mem.name + ".";
+    for (k in mem) {
+      if (Object.prototype.hasOwnProperty.call(mem, k) && sanitize(k) === sanitize(key)) return "your " + key + " is " + mem[k] + ".";
+    }
+    e = entryFor(key);
+    if (e.user) return e.user;
+    return spokenMeaning("my " + key) || null;
   }
 
   function lookupFact(text) {
@@ -485,7 +516,7 @@
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
     /* Math first; a locked/user fact beats lessons for what is X / define X / my X. */
-    var hit = mathAnswer(text) || lookupFact(text) || lookup(text);
+    var hit = mathAnswer(text) || recallMine(text) || lookupFact(text) || lookup(text);
     if (hit) return hit;
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
