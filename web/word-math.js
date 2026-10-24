@@ -691,6 +691,9 @@
     wants: wants,
     reset: function () { S = blank(); lastSolved = null; },
     state: function () { return JSON.parse(JSON.stringify(S)); },
+    /* v53: self-practice saves and restores the creator's session around its own quizzes. */
+    snapshot: function () { return { S: JSON.parse(JSON.stringify(S)), lastSolved: lastSolved }; },
+    restore: function (snap) { if (snap && snap.S) { S = JSON.parse(JSON.stringify(snap.S)); lastSolved = snap.lastSolved; } },
     singular: singular,
     plural: plural
   };
