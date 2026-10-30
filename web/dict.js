@@ -137,21 +137,104 @@
   function writeOffer(o) { try { localStorage.setItem(OFFER, JSON.stringify(o)); } catch (e) {} }
   function clearOffer() { try { localStorage.removeItem(OFFER); } catch (e) {} }
 
-  /* Reply for a word Nova has no locked/user meaning for. null when the dictionary has nothing. */
+  /* v56: pick the sense that fits the chat. Content words of the last ~6 lines (stopwords out,
+     simple stems) are scored against each sense gloss plus a small built-in synonym list
+     (WordNet shards here hold glosses only, not synset lemmas). */
+  var STOP = {};
+  ("a an the and or but if of to in on at by for with from as is are was were be been being am do does did " +
+   "can could will would shall should may might must have has had not no yes so than then that this these those " +
+   "it its i me my you your he she they them their we us our what who whom which when where why how there here " +
+   "just very too also about into out up down over some any all more most other such only own same ok okay hey nova " +
+   "mean means meaning define dictionary says say want remember thing things").split(" ").forEach(function (w) { STOP[w] = 1; });
+  var SYN = [
+    "talk speak say tell utter voice conversation word words speech",
+    "sound noise loud cry call growl bark howl roar yelp woof",
+    "dog dogs puppy hound canis wolf canine animal animals pet cat",
+    "tree trees wood woody trunk branch plant plants stem stems root roots",
+    "water river stream lake sea ocean",
+    "money cash bank pay coin",
+    "boat ship sail sea"
+  ].map(function (g) { return g.split(" "); });
+  function stem(w) {
+    if (w.length > 4 && /ies$/.test(w)) return w.slice(0, -3) + "y";
+    if (w.length > 4 && /ing$/.test(w)) return w.slice(0, -3);
+    if (w.length > 3 && /ed$/.test(w)) return w.slice(0, -2);
+    if (w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) return w.slice(0, -1);
+    return w;
+  }
+  function contentWords(text) {
+    var out = [];
+    clean(text).replace(/[.\-]/g, " ").split(" ").forEach(function (w) {
+      w = w.replace(/'s$/, "").replace(/'/g, "");
+      if (w.length < 3 || STOP[w] || /\d/.test(w)) return;
+      out.push(stem(w));
+    });
+    return out;
+  }
+  function expand(words) {
+    var set = {};
+    words.forEach(function (w) {
+      set[w] = 1;
+      SYN.forEach(function (g) {
+        for (var i = 0; i < g.length; i++) if (stem(g[i]) === w) { g.forEach(function (x) { set[stem(x)] = 1; }); return; }
+      });
+    });
+    return set;
+  }
+  function recentLines() {
+    var msgs = [];
+    try { if (typeof global.currentChat === "function") msgs = global.currentChat().messages || []; } catch (e) { msgs = []; }
+    return msgs.slice(-7).map(function (m) { return String((m && m.content) || ""); });
+  }
+  /* Returns { pick: index } for a clear winner, { top: [i, j] } for a tie or no overlap. */
+  function pickSense(e, term) {
+    var n = e.senses.length, base = stem(clean(term)), self = stem(e.word), ctx = {}, scores = [], i, order;
+    if (n < 2) return { pick: 0 };
+    recentLines().forEach(function (l) {
+      contentWords(l).forEach(function (w) { if (w !== base && w !== self) ctx[w] = 1; });
+    });
+    if (!Object.keys(ctx).length) return { pick: 0, scores: [] }; /* fresh chat: plain first sense, as before */
+    for (i = 0; i < n; i++) {
+      var g = expand(contentWords(e.senses[i][1])), sc = 0;
+      for (var w in ctx) if (g[w]) sc += 1;
+      scores.push(sc);
+    }
+    order = scores.map(function (s, k) { return k; }).sort(function (a, b) { return scores[b] - scores[a] || a - b; });
+    if (scores[order[0]] > 0 && scores[order[0]] > scores[order[1]]) return { pick: order[0], scores: scores };
+    return { top: [order[0], order[1]], scores: scores };
+  }
+  function brief(e, i) {
+    var s = e.senses[i];
+    return "(" + (POS[s[0]] || "word") + ") " + gloss(s[1]);
+  }
+
+  /* Reply for a word Nova has no locked/user meaning for. null when the dictionary has nothing.
+     lead set = an auto-words offer (v43/v50): never asks "which one?", uses a clear winner or sense 1. */
   function offer(term, lead) {
-    var e = entry(term);
+    var e = entry(term), p, i;
     if (!e) return null;
-    var line = (lead || "") + "dictionary says: " + sense(e, 0) + ".";
+    p = pickSense(e, term);
+    if (!lead && p.top) {
+      writeOffer({ term: clean(term), entry: e, i: p.top[0], choose: p.top, at: Date.now() });
+      return "dictionary says " + e.word + " can mean: 1) " + brief(e, p.top[0]) + " 2) " + brief(e, p.top[1]) + ". which one?";
+    }
+    i = p.pick != null ? p.pick : 0;
+    var line = (lead || "") + "dictionary says: " + sense(e, i) + ".";
     if (!saving()) {
       clearOffer();
       return line + " learning is stopped, so i will not save it.";
     }
-    writeOffer({ term: clean(term), entry: e, i: 0, at: Date.now() });
+    writeOffer({ term: clean(term), entry: e, i: i, seen: [i], auto: !!lead, at: Date.now() });
     return line + " want me to remember it?";
   }
 
   function isYes(q) { return /^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|please|remember it|save it|remember that|save that|do it)$/.test(q); }
   function isNo(q) { return /^(no|n|nope|nah|no thanks|no thank you|dont|don't|do not|skip|nevermind|never mind|cancel|forget it|not now)$/.test(q); }
+  function isPick(q) {
+    if (/^(1|one|first|the first|first one|the first one|number 1|number one)$/.test(q)) return 0;
+    if (/^(2|two|second|the second|second one|the second one|number 2|number two)$/.test(q)) return 1;
+    return -1;
+  }
   function isMore(q) { return /^(what else|other meaning|another meaning|next meaning|any other meaning|what else does it mean)$/.test(q); }
 
   function saveMeaning(o) {
@@ -166,7 +249,30 @@
   function answerOffer(text) {
     var o = readOffer();
     if (!o) return null;
-    var q = clean(text).replace(/[.!?]+$/, "");
+    var q = clean(text).replace(/[.!?]+$/, ""), k, n;
+    if (o.choose) { /* v56: "which one?" is open */
+      k = isPick(q);
+      if (k >= 0) {
+        o.i = o.choose[k];
+        o.seen = [o.i];
+        delete o.choose;
+        o.at = Date.now();
+        if (!saving()) { clearOffer(); return "dictionary says: " + sense(o.entry, o.i) + ". learning is stopped, so i will not save it."; }
+        writeOffer(o);
+        return "dictionary says: " + sense(o.entry, o.i) + ". want me to remember it?";
+      }
+      if (isNo(q)) { clearOffer(); return "ok. not saved."; }
+      if (isYes(q)) return "which one? say 1 or 2.";
+      if (isMore(q)) {
+        o.seen = o.choose.slice(); delete o.choose;
+        for (n = 0; n < o.entry.senses.length; n++) if (o.seen.indexOf(n) === -1) break;
+        if (n >= o.entry.senses.length) { o.at = Date.now(); o.choose = o.seen; writeOffer(o); return "those are the only meanings i have from the dictionary. say 1 or 2."; }
+        o.i = n; o.seen.push(n); o.at = Date.now(); writeOffer(o);
+        return "dictionary also says: " + sense(o.entry, o.i) + ". want me to remember it?";
+      }
+      clearOffer();
+      return null;
+    }
     if (isYes(q)) {
       clearOffer();
       if (!saving()) return "learning is stopped, so i did not save it.";
@@ -174,10 +280,23 @@
       try { if (global.NovaNewWords && global.NovaNewWords.list) global.NovaNewWords.list(); } catch (e) {} /* prunes the saved word */
       return "saved. " + o.term + " means " + gloss(o.entry.senses[o.i] ? o.entry.senses[o.i][1] : o.entry.senses[0][1]) + ".";
     }
-    if (isNo(q)) { clearOffer(); return "ok. not saved."; }
+    if (isNo(q)) {
+      clearOffer();
+      /* v56: a plain "no" opens a teach slot so the next line can be the creator's own meaning.
+         "skip" / "never mind" / "cancel" still just drop it. */
+      if (!/^(skip|nevermind|never mind|cancel|forget it|not now)$/.test(q)) {
+        var L = global.NovaLookup;
+        try { if (L && L.setPending) L.setPending({ question: "what is " + o.term, term: o.term, dictNo: true }); } catch (e2) {}
+        return "ok. not saved. tell me what " + o.term + " means if you like.";
+      }
+      return "ok. not saved.";
+    }
     if (isMore(q)) {
-      if (o.entry.senses.length > o.i + 1) {
-        o.i += 1;
+      o.seen = o.seen || [o.i];
+      for (n = 0; n < o.entry.senses.length; n++) if (o.seen.indexOf(n) === -1) break;
+      if (n < o.entry.senses.length) {
+        o.i = n;
+        o.seen.push(n);
         o.at = Date.now();
         writeOffer(o);
         return "dictionary also says: " + sense(o.entry, o.i) + ". want me to remember it?";
@@ -185,7 +304,38 @@
       return "that is the only meaning i have from the dictionary. want me to remember it?";
     }
     clearOffer();
+    /* v56: any other line (not a new question or owner command) is the creator's own meaning:
+       "actually a bark is a loud sound a dog makes" -> bark = "a loud sound a dog makes". */
+    var mine = ownMeaning(text, o);
+    if (mine) {
+      var L2 = global.NovaLookup;
+      if (L2 && L2.saveUser && L2.saveUser(o.term, mine)) {
+        if (o.entry.word !== o.term) L2.saveUser(o.entry.word, mine);
+        try { if (L2.clearPending) L2.clearPending(); } catch (e3) {}
+        return "got it. " + o.term + " means " + mine + ".";
+      }
+    }
     return null;
+  }
+
+  function ownMeaning(text, o) {
+    var raw = String(text || "").trim(), L = global.NovaLookup, T = global.NovaTrain, t, words, w, i, terms;
+    if (!raw || /\?\s*$/.test(raw) || /\d/.test(raw)) return null;
+    t = clean(raw).replace(/[.!]+$/, "");
+    if (/^(when i say|lock |edit |define |teach |read |remember|show |what |who |why |how |where |when |download |brain status|train status|stop|pause|learn|start|export|reset|practice|sample)/.test(t)) return null;
+    if (T && T.isLearnCommand && T.isLearnCommand(raw)) return null;
+    if (L && L.isNewQuestion && L.isNewQuestion(raw)) return null;
+    t = t.replace(/^(actually|no|nope|wrong|not quite|well)[,:]?\s+/, "").replace(/^(it|that)\s+(is|means)\s+/, "");
+    terms = [o.term, o.entry.word];
+    for (i = 0; i < terms.length; i++) {
+      w = terms[i].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      t = t.replace(new RegExp("^(?:(?:a|an|the)\\s+)?" + w + "s?\\s+(?:is|are|means)\\s+"), "");
+    }
+    t = t.trim();
+    words = t.split(" ").filter(Boolean);
+    if (words.length < 2 || t.length > 180) return null;
+    if (T && T.wordSalad && T.wordSalad(t)) return null;
+    return t;
   }
 
   function learnCmd(text) {
@@ -231,7 +381,7 @@
     if (!T || typeof T.learnPair !== "function" || T.learnPair._dict) return;
     var orig = T.learnPair;
     var g = function (user, nova) {
-      if (/^(dictionary says|dictionary also says|you have said .* dictionary says|ok\. not saved|that is the only meaning|downloading the dictionary|learning is stopped, so i)/.test(String(nova || "").toLowerCase())) return false;
+      if (/^(dictionary says|dictionary also says|dictionary says [a-z' -]+ can mean|which one\? say|those are the only meanings|you have said .* dictionary says|ok\. not saved|that is the only meaning|downloading the dictionary|learning is stopped, so i)/.test(String(nova || "").toLowerCase())) return false;
       return orig.apply(this, arguments);
     };
     g._dict = true;
@@ -257,7 +407,7 @@
   }
 
   global.NovaDict = {
-    entry: entry, offer: offer, answerOffer: answerOffer, readOffer: readOffer, clearOffer: clearOffer,
+    entry: entry, offer: offer, pickSense: pickSense, contentWords: contentWords, answerOffer: answerOffer, readOffer: readOffer, clearOffer: clearOffer,
     saving: saving, shardKey: shardKey, download: downloadAll, OFFER: OFFER, NOSAVE: NOSAVE
   };
   guardLearn();

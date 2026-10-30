@@ -422,10 +422,35 @@
     return false;
   }
 
-  function acceptGenerated(s) {
+  /* v56: word salad like "you what is you learn my phrases and so": a pronoun said twice,
+     no verb-ish word, or almost nothing in common with the question and the seeded lessons. */
+  var PRON = { i: 1, you: 1, me: 1, my: 1, your: 1, he: 1, she: 1, it: 1, we: 1, they: 1, him: 1, her: 1, them: 1 };
+  var VERBISH = /^(is|are|am|was|were|be|been|do|does|did|can|could|will|would|should|has|have|had|like|likes|love|loves|make|makes|go|goes|get|gets|know|knows|see|sees|say|says|think|want|wants|need|needs|eat|eats|run|runs|play|plays|help|helps|bark|barks|talk|talks|means?|feel|feels|keep|come|comes|take|takes|give|gives|use|uses|work|works|live|lives|let|try|sat|sit|sits|ran|went|said|made|took|got|saw|came|gave|knew|found|shines?|glows?|hums?)$|.(ed|ing)$/;
+  var FILL = { a: 1, an: 1, the: 1, and: 1, or: 1, so: 1, of: 1, to: 1, in: 1, on: 1, is: 1, are: 1, what: 1 };
+  function wordSalad(t, question, seed) {
+    var words = sanitize(t).replace(/[^a-z' ]/g, " ").split(/\s+/).filter(Boolean), seen = {}, i, w, verb = false, ctx = {}, hits = 0, content = 0;
+    for (i = 0; i < words.length; i++) {
+      w = words[i];
+      if (PRON[w]) { if (seen[w]) return true; seen[w] = 1; }
+      if (VERBISH.test(w)) verb = true;
+    }
+    if (question == null) return false;
+    var midWh = /\s(what|who|why|how|where|when)\b/.test(" " + words.slice(1).join(" "));
+    sanitize(String(question) + " " + String(seed || "")).replace(/[^a-z' ]/g, " ").split(/\s+/).forEach(function (x) { if (x) ctx[x] = 1; });
+    for (i = 0; i < words.length; i++) {
+      w = words[i];
+      if (FILL[w] || PRON[w]) continue;
+      content += 1;
+      if (ctx[w]) hits += 1;
+    }
+    return content >= 2 && hits / content < 0.34 && ((words.length >= 3 && !verb) || midWh);
+  }
+
+  function acceptGenerated(s, question, seed) {
     var t = String(s || "").replace(/\s+/g, " ").trim();
     if (!t) return false;
     if (looksGibberish(t)) return false;
+    if (wordSalad(t, question, seed)) return false;
     if (isUnknownReply(t)) return false;
     if (isLearnCommand(t)) return false;
     if (letterSoup(t)) return false;
@@ -448,10 +473,13 @@
     var fn, out;
     if (!global.NovaTrain || typeof global.NovaTrain.generate !== "function") return null;
     fn = global.NovaTrain.generate;
-    try { out = fn(lessonSeed(text)); }
+    var seed = lessonSeed(text);
+    try { out = fn(seed); }
     catch (e) { return null; }
-    if (!acceptGenerated(out)) return null;
-    return String(out).replace(/\s+/g, " ").trim();
+    if (!acceptGenerated(out, text, seed)) return null;
+    out = String(out).replace(/\s+/g, " ").trim();
+    lastGenerated = sanitize(out);
+    return out;
   }
 
   function lookupReply(text) {
@@ -487,8 +515,12 @@
       || /^ok\. skipped/.test(String(s || "").toLowerCase());
   }
 
+  var lastGenerated = null;
   function learnPair(user, nova) {
     if (!trainer.learning || !trainer.running) return false;
+    /* v56: a brain guess is not a lesson until the creator confirms or corrects it, and word salad never is. */
+    if (lastGenerated && sanitize(nova) === lastGenerated) { lastGenerated = null; return false; }
+    if (wordSalad(nova)) return false;
     if (isUnknownReply(nova) || isTeachAck(nova)) return false;
     if (!pushLesson(user, nova)) return false;
     /* Worker mirror (optional): keep worker corpus warm if present. */
@@ -661,6 +693,8 @@
     knownWords: knownWords,
     lessonSeed: lessonSeed,
     acceptGenerated: acceptGenerated,
+    wordSalad: wordSalad,
+    isLearnCommand: isLearnCommand,
     tryGenerate: tryGenerate,
     talk: function (t) {
       var hit = lookupReply(t);
