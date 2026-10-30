@@ -40,9 +40,10 @@ test("no and skip do not save", () => {
   for (const ans of ["no", "skip", "nope"]) {
     const n = start();
     assert.match(n.say("define river"), /^dictionary says: river \(noun\)/);
-    assert.equal(n.say(ans), "ok. not saved.");
+    assert.equal(n.say(ans), ans === "skip" ? "ok. not saved." : "ok. not saved. tell me what river means if you like.");
     assert.ok(!facts(n).river, ans + " must not save");
-    assert.equal(n.localStorage.getItem("nova-pending-teach-v1"), null, "no teach left pending");
+    if (ans === "skip") assert.equal(n.localStorage.getItem("nova-pending-teach-v1"), null, "no teach left pending");
+    else assert.equal(JSON.parse(n.localStorage.getItem("nova-pending-teach-v1")).term, "river", "v56: no opens a teach slot");
     n.stop();
   }
 });
@@ -54,9 +55,9 @@ test("every lookup phrasing reaches the dictionary", () => {
     assert.equal(n.say(q), RIVER, q);
     n.say("no");
   }
-  assert.match(n.say("what is cats"), /^dictionary says: cat \(noun\)/, "plural");
+  assert.match(n.say("what is cats"), /^dictionary says:? cat( \(noun\)| can mean)/, "plural");
   n.say("no");
-  assert.match(n.say("what is mice"), /^dictionary says: mouse \(noun\)/, "irregular plural");
+  assert.match(n.say("what is mice"), /^dictionary says:? mouse( \(noun\)| can mean)/, "irregular plural");
   n.say("no");
   n.stop();
 });

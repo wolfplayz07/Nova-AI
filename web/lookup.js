@@ -200,6 +200,7 @@
     }
     if (!question) return;
     payload = { question: question, term: term, kind: kind, at: Date.now(), word: term || question };
+    if (opts && opts.dictNo) payload.dictNo = true; /* v56: opened by "no" to a dictionary remember-it */
     try { localStorage.setItem(PENDING, JSON.stringify(payload)); } catch (e) {}
     try {
       if (global.NovaTrain && typeof global.NovaTrain.markUnknown === "function") {
@@ -435,6 +436,22 @@
       || /\bmeans\b/.test(lower);
   }
 
+  /* v56: "a bark is a loud sound", "an owl is a bird", "glorp is a game". Not questions, math,
+     owner commands, or sentences about people/things in the room ("it is", "my dog is", "you are"). */
+  var DECL_SUBJ_BAD = /^(read|lock|edit|define|teach|fix|say|when|remember|i|you|he|she|it|we|they|this|that|these|those|there|here|what|who|why|how|when|where|which|my|your|his|her|our|their|its|everything|nothing|today|tonight|now|life)\b/;
+  function stripArticle(t) { return sanitize(t).replace(/^(a|an|the)\s+/, ""); }
+  function declarative(text) {
+    var raw = String(text || "").trim(), lower = sanitize(raw).replace(/[.!]+$/, ""), m, subj, meaning;
+    if (!lower || /\?\s*$/.test(raw) || /\d/.test(lower)) return null;
+    m = lower.match(/^(?:(?:a|an)\s+)?([a-z][a-z'-]*(?:\s[a-z][a-z'-]*){0,2})\s+is\s+(.+)$/);
+    if (!m) return null;
+    subj = m[1]; meaning = m[2].trim();
+    if (DECL_SUBJ_BAD.test(subj) || /^(the|not|so|very|too|really|just|ok|okay|good|bad|fine|here|there|gone|done|over)\b/.test(meaning)) return null;
+    if (meaning.split(" ").length < 2 && !/^(a|an)\b/.test(meaning)) return null;
+    if (subj.split(" ").length > 3 || meaning.length < 3) return null;
+    return { term: subj, meaning: meaning };
+  }
+
   function extractCorrectionAnswer(raw) {
     var lower = String(raw || "").trim().toLowerCase(), m;
     m = lower.match(/^(?:say:|say|reply|answer|tell them|you should say|the answer is)[:\s]+["']?(.+?)["']?$/);
@@ -461,6 +478,11 @@
     if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
+    /* v56: a lookup ("look up river", "define bank") is never saved as a meaning. */
+    if (pend.term && !isExplicitTeachPhrase(text) && unknownTerm(text)) {
+      clearPending();
+      return null;
+    }
     /* v46: a line that is itself a new question replaces the pending slot instead of being saved as the answer. */
     if (isNewQuestion(text) && !isExplicitTeachPhrase(text)) {
       term = unknownTerm(text);
@@ -473,10 +495,15 @@
       yn = normYesNo(answer);
       if (yn) answer = yn;
     }
-    if (pend.term) saveUser(pend.term, answer);
+    if (pend.term) {
+      var dm = declarative(answer);
+      if (dm && stripArticle(dm.term) === stripArticle(pend.term)) answer = dm.meaning;
+      saveUser(pend.term, answer);
+    }
     if (global.NovaTrain && typeof global.NovaTrain.teachCorrection === "function") {
       msg = global.NovaTrain.teachCorrection(pend.question, answer);
       clearPending();
+      if (pend.dictNo) return "saved your meaning of " + pend.term + ".";
       return msg || ("got it. next time i'll say: " + sanitize(answer));
     }
     replaceLesson(pend.question, answer);
@@ -539,6 +566,11 @@
     if (/^read\s+/i.test(raw)) {
       var got = ingestRead(raw);
       return got || "no word lines found. use: cat means a small animal.";
+    }
+    var dm = declarative(raw);
+    if (dm && !(global.NovaTrain && global.NovaTrain.isLearnCommand && global.NovaTrain.isLearnCommand(raw)) && saveUser(dm.term, dm.meaning)) {
+      clearPending();
+      return "got it. " + dm.term + " is " + dm.meaning + ".";
     }
     return null;
   }
