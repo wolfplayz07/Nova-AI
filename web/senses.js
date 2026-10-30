@@ -6,11 +6,17 @@
    meaning in nova-facts-v1 stays where it was (my X, locks, brain status keep working).
    Picking: wording cues ("a bark", "barks", "barking", "bark at" -> count/verb senses; bare "bark",
    "piece of bark", "the bark of", "tree bark" -> mass senses) + overlap with the recent chat.
-   Close scores -> "which one? 1) ... 2) ..."; the pick answers and never teaches. */
+   Close scores -> "which one? 1) ... 2) ..."; the pick answers and never teaches.
+   v58: explicit wording always wins over context. When the senses split on wording (some mass,
+   some count), "bark" -> mass, "a bark" / "barks" -> count, "piece of bark" -> mass, whatever the
+   chat was about. Recent chat (the creator's lines only, never Nova's answers) only breaks ties
+   among senses the wording allows, or decides when there is no wording cue at all
+   ("what does it mean", "what is that word"). */
 (function (global) {
   var KEY = "nova-senses-v1";
   var CHOOSE = "nova-sense-choose-v1";
   var MIGRATED = "nova-senses-migrated-v1";
+  var LAST = "nova-sense-last-v1";
   var TTL = 10 * 60 * 1000;
   var MARGIN = 1;
   var POS = { n: "noun", v: "verb", a: "adjective", r: "adverb" };
@@ -104,8 +110,17 @@
 
   /* "what is a bark" -> { word: "bark", cue: "count" }; "what is a piece of bark" -> mass;
      "what is the bark of a tree" -> mass + extra context "tree"; "what is tree bark" -> mass + "tree". */
+  function lastWord() {
+    try { var o = JSON.parse(localStorage.getItem(LAST) || "null"); return o && Date.now() - (o.at || 0) < TTL ? o.word : null; }
+    catch (e) { return null; }
+  }
   function parse(text) {
-    var q = clean(text).replace(/^(?:ok|okay|hey|nova)\b\s*/g, "").replace(/^what's /, "whats ");
+    var q = clean(text).replace(/^(?:ok|okay|hey|nova)\b\s*/g, "").replace(/^(?:ok|okay|hey|nova)\b\s*/g, "").replace(/^what's /, "whats ");
+    /* v58: no wording cue: "what does it mean", "what is that word" -> the word just asked about */
+    if (/^(?:so )?(?:what does (?:it|that|that word|this word) mean|whats that mean|what is that word|whats that word|what is that|what is it|what does that one mean)$/.test(q)) {
+      var lw = lastWord();
+      return lw ? { word: lw, cue: "", extra: [] } : null;
+    }
     var m = q.match(/^(?:what does|whats the meaning of|what is the meaning of|whats|what is|what are|define|meaning of|look up|lookup)\s+(.+?)(?:\s+mean)?$/);
     if (!m || /\bmy\b/.test(m[1])) return null;
     var p = m[1], x;
@@ -119,10 +134,11 @@
     return null;
   }
 
-  function context(text, w) {
+  function context(text, w, userOnly) {
     var msgs = [], ctx = {}, last = clean(text);
     try { if (typeof global.currentChat === "function") msgs = global.currentChat().messages || []; } catch (e) {}
-    msgs = msgs.slice(-7).map(function (m) { return String((m && m.content) || ""); });
+    msgs = msgs.slice(-7).filter(function (m) { return !userOnly || (m && m.role === "user"); })
+      .map(function (m) { return String((m && m.content) || ""); });
     if (msgs.length && clean(msgs[msgs.length - 1]) === last) msgs.pop();
     msgs.forEach(function (l) { if (/^(which one\?|dictionary says)/.test(clean(l))) return; words(l).forEach(function (x) { ctx[x] = 1; }); });
     delete ctx[w]; delete ctx[w.replace(/s$/, "")];
@@ -180,18 +196,32 @@
     if (!hasTaught && !(p.cue === "mass")) return null; /* dictionary only: v56 flow */
     list = allSenses(w);
     if (!list.length) return null;
-    if (list.length === 1) return hasTaught ? say(w, list[0]) : null;
-    ctx = context(text, w);
+    if (list.length === 1) return hasTaught ? remember(w, say(w, list[0])) : null;
+    /* v58: wording first. Senses split on wording when some are mass and some count. */
+    var want = p.cue === "count" ? "count" : (p.cue === "mass" || p.cue === "bare") ? "mass" : "";
+    var split = list.some(function (s) { return s.kind === "mass"; }) && list.some(function (s) { return s.kind === "count"; });
+    var cued = !!want && split;
+    if (cued) {
+      var keep = list.filter(function (s) { return s.kind === want; });
+      if (keep.length) list = keep;
+      if (list.length === 1) { try { if (D() && D().clearOffer) D().clearOffer(); } catch (e0) {} return remember(w, say(w, list[0])); }
+    }
+    /* context: for wording-cued lines only the creator's own lines count (never Nova's answers) */
+    ctx = context(text, w, cued);
     (p.extra || []).forEach(function (x) { ctx[x] = 1; });
     scored = list.map(function (s, k) { return { s: s, sc: score(s, p.cue, ctx), k: k }; })
       .sort(function (a, b) { return b.sc - a.sc || a.k - b.k; });
     if (scored[0].sc - scored[1].sc < MARGIN) {
       try { localStorage.setItem(CHOOSE, JSON.stringify({ word: w, options: [scored[0].s, scored[1].s], at: Date.now() })); } catch (e) {}
       try { if (D() && D().clearOffer) D().clearOffer(); } catch (e2) {}
-      return "which one? 1) " + short(scored[0].s) + " 2) " + short(scored[1].s);
+      return remember(w, "which one? 1) " + short(scored[0].s) + " 2) " + short(scored[1].s));
     }
     try { if (D() && D().clearOffer) D().clearOffer(); } catch (e3) {}
-    return say(w, scored[0].s);
+    return remember(w, say(w, scored[0].s));
+  }
+  function remember(w, out) {
+    try { localStorage.setItem(LAST, JSON.stringify({ word: w, at: Date.now() })); } catch (e) {}
+    return out;
   }
 
   /* The line after "which one?": 1/2/first/second or words from one meaning. Never teaches. */
