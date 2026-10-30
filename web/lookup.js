@@ -152,8 +152,16 @@
     return e.locked || e.user || "";
   }
 
-  function isYesNoQuestion(text) {
+  /* v55: drop leading fillers ("ok nova,", "hey nova", "um so") so yes/no detection sees the question.
+     A line that is only fillers is left alone (greetings keep working). */
+  function stripFillers(text) {
     var q = sanitize(text);
+    var out = q.replace(/^(?:(?:ok|okay|hey|hi|so|um|well|nova)\b[\s,.!]*)+/, "");
+    return out ? out : q;
+  }
+
+  function isYesNoQuestion(text) {
+    var q = stripFillers(text);
     /* v48: "should I / should we ..." asks for advice, not a yes or no. */
     if (/^should (?:i|we)\b/.test(q)) return false;
     return /^(can|could|do|does|did|is|are|am|will|would|should|have|has|may)\b/.test(q);
@@ -538,6 +546,10 @@
   function ruleThenBrain(origTalk, text) {
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
+    /* v55: "ok nova can a dog talk?" -> "can a dog talk?" so fillers never hide a yes/no question.
+       Only yes/no lines are rewritten; greetings and every other line are untouched. */
+    var bare = stripFillers(text);
+    if (bare !== sanitize(text) && isYesNoQuestion(bare)) text = bare;
     /* Math first; a locked/user fact beats lessons for what is X / define X / my X. */
     var hit = mathAnswer(text) || recallMine(text) || lookupFact(text) || lookup(text);
     if (hit) return hit;
