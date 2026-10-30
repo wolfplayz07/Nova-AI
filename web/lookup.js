@@ -129,13 +129,17 @@
     return true;
   }
 
-  function saveUser(word, meaning) {
+  /* v57: line = the creator's teaching line; the meaning is also APPENDED as a sense (senses.js),
+     so "bark" can keep its dictionary meanings next to the taught one. edit = replace newest. */
+  function saveUser(word, meaning, line, edit) {
     word = sanitize(word);
     meaning = sanitize(meaning).slice(0, 180);
     if (!word || !meaning || word.split(" ").length > 4) return false;
     var e = entryFor(word);
     e.user = meaning;
-    return putEntry(word, e);
+    var ok = putEntry(word, e), S = global.NovaSenses;
+    try { if (ok && S) (edit ? S.editTaught : S.addTaught)(word, meaning, line || meaning); } catch (x) {}
+    return ok;
   }
 
   function saveLocked(word, meaning) {
@@ -498,7 +502,7 @@
     if (pend.term) {
       var dm = declarative(answer);
       if (dm && stripArticle(dm.term) === stripArticle(pend.term)) answer = dm.meaning;
-      saveUser(pend.term, answer);
+      saveUser(pend.term, answer, text);
     }
     if (global.NovaTrain && typeof global.NovaTrain.teachCorrection === "function") {
       msg = global.NovaTrain.teachCorrection(pend.question, answer);
@@ -557,18 +561,18 @@
     }
     m = lower.match(/^edit\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
     if (m) {
-      if (saveUser(m[1], m[2])) return "updated your meaning of " + sanitize(m[1]) + ".";
+      if (saveUser(m[1], m[2], raw, true)) return "updated your meaning of " + sanitize(m[1]) + ".";
     }
     m = lower.match(/^(?:define|teach)\s+(.+?)\s+(?:as|means|:)\s+(.+)$/);
-    if (m && saveUser(m[1], m[2])) return "saved your meaning.";
+    if (m && saveUser(m[1], m[2], raw)) return "saved your meaning.";
     m = lower.match(/^(.+?)\s+means\s+(.+)$/);
-    if (m && m[1].split(/\s+/).length <= 4 && saveUser(m[1], m[2])) return "saved your meaning.";
+    if (m && m[1].split(/\s+/).length <= 4 && saveUser(m[1], m[2], raw)) return "saved your meaning.";
     if (/^read\s+/i.test(raw)) {
       var got = ingestRead(raw);
       return got || "no word lines found. use: cat means a small animal.";
     }
     var dm = declarative(raw);
-    if (dm && !(global.NovaTrain && global.NovaTrain.isLearnCommand && global.NovaTrain.isLearnCommand(raw)) && saveUser(dm.term, dm.meaning)) {
+    if (dm && !(global.NovaTrain && global.NovaTrain.isLearnCommand && global.NovaTrain.isLearnCommand(raw)) && saveUser(dm.term, dm.meaning, raw)) {
       clearPending();
       return "got it. " + dm.term + " is " + dm.meaning + ".";
     }
@@ -583,7 +587,7 @@
     var bare = stripFillers(text);
     if (bare !== sanitize(text) && isYesNoQuestion(bare)) text = bare;
     /* Math first; a locked/user fact beats lessons for what is X / define X / my X. */
-    var hit = mathAnswer(text) || recallMine(text) || lookupFact(text) || lookup(text);
+    var hit = mathAnswer(text) || recallMine(text) || senseAnswer(text) || lookupFact(text) || lookup(text);
     if (hit) return hit;
     var term = unknownTerm(text);
     if (term && !spokenMeaning(term) && !mathAnswer(text)) {
@@ -600,6 +604,13 @@
     /* Lookup already missed. Same generate-or-IDK path for questions and other lines.
        Do not call origTalk: its lesson match is looser than wh-substring rules. */
     return generateOrUnknown(text);
+  }
+
+  /* v57: a word with more than one meaning picks one by wording + recent chat (senses.js). */
+  function senseAnswer(text) {
+    var S = global.NovaSenses;
+    if (!S || typeof S.answer !== "function") return null;
+    try { return S.answer(text); } catch (e) { return null; }
   }
 
   function dictionaryOffer(term) {

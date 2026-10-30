@@ -309,8 +309,8 @@
     var mine = ownMeaning(text, o);
     if (mine) {
       var L2 = global.NovaLookup;
-      if (L2 && L2.saveUser && L2.saveUser(o.term, mine)) {
-        if (o.entry.word !== o.term) L2.saveUser(o.entry.word, mine);
+      if (L2 && L2.saveUser && L2.saveUser(o.term, mine, text)) {
+        if (o.entry.word !== o.term) L2.saveUser(o.entry.word, mine, text);
         try { if (L2.clearPending) L2.clearPending(); } catch (e3) {}
         return "got it. " + o.term + " means " + mine + ".";
       }
