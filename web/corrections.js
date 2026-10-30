@@ -9,7 +9,7 @@
 (function (global) {
   var STORE = "nova-confidence-v1";
   var MAXQ = 200, MAXBAD = 200;
-  var CORR = /^(no[,:]|fix[:\s]|say[:\s]|the answer is\b|you should say\b|reply[:\s]|answer[:\s]|tell them\b)/;
+  var CORR = /^(no[,:]|fix[:\s]|say[:\s]|wrong[,:]|actually[,:]|the answer is\b|you should say\b|reply[:\s]|answer[:\s]|tell them\b)/;
   var prev = null, curKey = null, lastGen = null;
 
   function norm(s) { return String(s || "").toLowerCase().replace(/\u2019/g, "'").replace(/\s+/g, " ").trim().replace(/[?.!,\s]+$/, ""); }

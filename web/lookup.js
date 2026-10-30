@@ -477,7 +477,30 @@
     return "got it. next time i'll say: " + sanitize(answer);
   }
 
-  function handleTeach(text) {
+  /* v54: the last accepted guess, so the very next line can correct it ("the answer is X",
+     "you should say X", "wrong, X"). "no, X" already teaches through train.js. Memory only. */
+  var lastGuess = null;
+  var GUESS_FIX = /^(?:the answer is|you should say|wrong[,:]|that'?s wrong[,:]?|actually[,:])\s*["']?(.+?)["']?$/;
+
+  function finishGuess(text, lastUser) {
+    var g = lastGuess, m, answer;
+    lastGuess = null;
+    if (!g || Date.now() - g.at > 10 * 60 * 1000) return null;
+    /* Only the line right after the guess: other replies (math, memory) skip handleUser. */
+    if (lastUser != null && sanitize(lastUser) !== sanitize(g.question)) return null;
+    m = String(text || "").trim().toLowerCase().replace(/\u2019/g, "'").match(GUESS_FIX);
+    if (!m) return null;
+    answer = sanitize(m[1]);
+    if (!answer || isNewQuestion(m[1])) return null;
+    if (isYesNoQuestion(g.question)) answer = normYesNo(answer) || answer;
+    replaceLesson(g.question, answer);
+    clearPending();
+    return "got it. next time i'll say: " + answer;
+  }
+
+  function handleTeach(text, lastUser) {
+    var guessFix = finishGuess(text, lastUser);
+    if (guessFix) return guessFix;
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
     var raw = String(text || "").trim();
@@ -552,6 +575,7 @@
     }
     if (guessed && String(guessed).trim()) {
       clearPending();
+      lastGuess = { question: text, at: Date.now() };
       return String(guessed).replace(/\s+/g, " ").trim();
     }
     setPending({ question: text, term: null });
@@ -582,7 +606,7 @@
     var origTalk = T.talk;
     T.talk = function (t) { return ruleThenBrain(origTalk, t); };
     T.handleUser = function (text, lastUser) {
-      var taught = handleTeach(text);
+      var taught = handleTeach(text, lastUser);
       if (taught) return taught;
       return origHandle ? origHandle(text, lastUser) : null;
     };
@@ -602,7 +626,8 @@
     saveUser: saveUser,
     spokenMeaning: spokenMeaning,
     clearPending: clearPending,
-    lessons: lessonsFromStore
+    lessons: lessonsFromStore,
+    lastGuess: function () { return lastGuess ? lastGuess.question : null; }
   };
 
   wrap();
