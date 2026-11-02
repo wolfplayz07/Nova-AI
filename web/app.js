@@ -403,9 +403,30 @@ function parseRemember(raw) {
 }
 
 function memoryList() {
-  return Object.keys(state.memories || {}).map(function (key) {
+  var out = Object.keys(state.memories || {}).map(function (key) {
     return { key: key, value: state.memories[key] };
   });
+  /* v62: every taught meaning (lessons like "a blick is a small bird", answers to "what is a phone?",
+     taught yes/no phrases), merged into the same line as the word when it is already listed. */
+  var add = function (key, vals) {
+    var row = out.filter(function (m) { return m.key.toLowerCase() === key; })[0], list, low;
+    if (!row) { row = { key: key, value: "" }; out.push(row); }
+    list = row.value ? String(row.value).split(/\s*;\s*/) : [];
+    low = list.map(function (x) { return x.toLowerCase(); });
+    vals.forEach(function (v) { v = String(v || "").trim(); if (v && low.indexOf(v.toLowerCase()) === -1) { list.push(v); low.push(v.toLowerCase()); } });
+    row.value = list.join("; ");
+  };
+  try {
+    var S = window.NovaSenses, t = S && S.read ? S.read() : {};
+    Object.keys(t).forEach(function (w) {
+      if (Array.isArray(t[w]) && t[w].length) add(w, t[w].map(function (x) { return x && x.gloss; }));
+    });
+  } catch (e) {}
+  try {
+    var L = window.NovaLookup, yn = L && L.readYesNo ? L.readYesNo() : null;
+    if (yn) ["yes", "no"].forEach(function (k) { if (yn[k].length) add(k, yn[k]); });
+  } catch (e2) {}
+  return out.filter(function (m) { return m.value; });
 }
 
 function reply(text) {
@@ -434,6 +455,12 @@ function reply(text) {
     });
     return "Trying to read that page. Lots of sites block the phone. If nothing useful comes back, paste the words after read.";
   }
+  /* v62: the answer to "what is a phone?" / "which call?" goes to the open question first. */
+  var LK = window.NovaLookup;
+  if (LK && LK.readClarify && LK.readClarify()) {
+    var clar = LK.clarifyAnswer(text);
+    if (clar) return clar;
+  }
   var memories = memoryList();
   if (lower.indexOf("what do you remember") !== -1 || lower === "memory") {
     if (!memories.length) return "Local memory is empty.";
@@ -442,6 +469,10 @@ function reply(text) {
   var meant = parseMeaning(text);
   if (meant && (meant.explicit || yesNoSide(meant.key) || yesNoSide(meant.value) || !/\bmeans\b/i.test(text))) return teachMeaning(meant);
   var remembered = parseRemember(text);
+  /* v62: "remember yes is I want to" teaches a yes/no meaning, the same as "remember yes means I want to". */
+  if (remembered && remembered.key !== "note" && (yesNoSide(remembered.key) || yesNoSide(remembered.value))) {
+    return teachMeaning({ key: remembered.key.toLowerCase(), value: remembered.value.replace(/[.!]+$/, ""), explicit: true });
+  }
   if (remembered) {
     state.memories = state.memories || {};
     state.memories[remembered.key] = remembered.value;
