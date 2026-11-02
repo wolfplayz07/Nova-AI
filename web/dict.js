@@ -424,8 +424,12 @@
     reply = wrapped;
   }
 
+  /* v62: can the dictionary answer for this word right now? false while its shard is not loaded
+     (offline, not downloaded), so a missing shard never makes a word look unknown. */
+  function ready(term) { var w = clean(term); return !!(w && shard(shardKey(w))); }
+
   global.NovaDict = {
-    entry: entry, offer: offer, pickSense: pickSense, contentWords: contentWords, answerOffer: answerOffer, readOffer: readOffer, clearOffer: clearOffer,
+    ready: ready, entry: entry, offer: offer, pickSense: pickSense, contentWords: contentWords, answerOffer: answerOffer, readOffer: readOffer, clearOffer: clearOffer,
     saving: saving, shardKey: shardKey, download: downloadAll, OFFER: OFFER, NOSAVE: NOSAVE
   };
   guardLearn();

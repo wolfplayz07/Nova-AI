@@ -28,7 +28,7 @@ const saved = (n) => JSON.parse(n.localStorage.getItem(STORE) || "null");
 test("fresh phone loads the seed brain (weights only, cache-busted URL)", async () => {
   const n = boot({ files: FILES, globals: { fetch: fetchOf(fakeExport(9320, 0.01)) } });
   assert.equal(await n.T().seedReady(), "seed");
-  assert.equal(fetchOf.last, "brains/current.json?v=61");
+  assert.equal(fetchOf.last, "brains/current.json?v=62");
   assert.equal(n.T().status().steps, 9320);
   const s = saved(n);
   assert.equal(s.model.steps, 9320);
@@ -109,9 +109,9 @@ test("strip script removes lessons, memories and free text", () => {
 test("cache versions bumped together", () => {
   const html = fs.readFileSync(path.join(ROOT, "web/index.html"), "utf8");
   const sw = fs.readFileSync(path.join(ROOT, "web/sw.js"), "utf8");
-  assert.ok(!/\?v=60/.test(html) && /brain-strip\.js\?v=61/.test(html));
-  assert.match(sw, /nova-local-v61/);
-  assert.match(sw, /brains\/current\.json\?v=61/);
+  assert.ok(!/\?v=61/.test(html) && /brain-strip\.js\?v=62/.test(html));
+  assert.match(sw, /nova-local-v62/);
+  assert.match(sw, /brains\/current\.json\?v=62/);
 });
 
 test("export brain is read-only: steps and weights identical after export and after a reload", () => {

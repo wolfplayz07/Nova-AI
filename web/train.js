@@ -684,7 +684,7 @@
 
   /* v61: weights-only install. Lessons, reading and memories on this phone are kept as they are. */
   var BACKUP = "nova-tiny-brain-v7-backup";
-  var SEED_URL = "brains/current.json?v=61";
+  var SEED_URL = "brains/current.json?v=62";
   var seedState = "none";
   function installWeights(b) {
     var src = {}, k;

@@ -249,3 +249,12 @@ All 65 tests pass (`node --test tests/`): the 52 earlier ones, including the Jar
 - **Weights only.** A strip script keeps only the numbers the network learned and its step count. Lessons, memories, notes and diary text never leave the phone with it.
 - **Import and undo.** `import brain` loads a saved brain file from Files after backing up the current one; `undo import` puts the old one back. Bad files are refused.
 - **Export no longer touches the brain.** Export used to save first and then read storage. It now just reads what is in memory, the file includes the step count, and the step counter also lives in its own small key so it cannot slip back to 0. `export lessons` is a separate file.
+
+## 2026-11-02 — v62: ask about the words before "yes or no?"
+
+- **Why:** "Do phones call?" got "yes or no?" even when Nova had no idea what the words meant. The creator asked that Nova first make sure it understands the question.
+- **Clarify first.** Before a yes/no question gets "yes or no?", Nova pulls out the question's content words (the subject is a noun, and after do/can/will the next word is the verb). It looks each one up in taught lessons first, then in the dictionary. For an unknown word it asks "what is a glorp?" (noun) or "what does blorf mean?" (verb). The creator's answer ("a glorp is a tiny robot", "it means to hop", "blorf means to hop", or just the meaning) is saved like any taught lesson and stacks with older meanings (v60). Then it says "yes or no?" as before.
+- **Which one?** When the dictionary has several meanings and the question pulls away from the most common one with no clear winner (the v59 usage picker), Nova asks "which call? 1) ... 2) ...". Picking a number uses that meaning for this question and teaches nothing.
+- **Limits:** at most 2 words per question. Skip/nevermind cancels, and asking a new question drops the open one. With no dictionary available (offline, not downloaded), nothing is asked. "Can dogs bark", "can a dog talk", "is fire hot" still get "yes or no?" straight away, and a lesson like "is the sky blue → yes" still answers "yes".
+- **Fixes:** "Remember yes is I want to" now teaches "I want to" as a yes meaning (before, it only made a memory note, so it never counted as yes). "What do you remember" now lists every taught meaning, including lessons like "a blick is a small bird", answers to these questions, and taught yes/no phrases.
+- **Tests:** `tests/clarify-v62.test.mjs` adds 15 tests; all 232 pass. **Demo:** `/workspace/nova-demo/v62_demo.mp4`.
