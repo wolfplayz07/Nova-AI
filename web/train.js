@@ -109,12 +109,39 @@
     return true;
   }
 
+  var STEPS_KEY = "nova-tiny-brain-v7-steps";
+  /* v61: the step counter is also kept in its own tiny key, so a failed big save can never
+     drop it back to 0. Falls back to the Adam counter t (one t per training step). */
+  function recoverSteps(m) {
+    var a = +(m && m.steps) || 0, b = +(m && m.t) || 0, c = 0;
+    try { c = +localStorage.getItem(STEPS_KEY) || 0; } catch (e) {}
+    return Math.max(a, b, c);
+  }
+  function brainJSON(withMoments) {
+    var o = {
+      model: {
+        kind: "gru-v7", hidden: H, vocab: V, steps: model.steps, loss: model.loss, ema: model.ema, t: model.t,
+        Wxz: Array.from(model.Wxz), Wxr: Array.from(model.Wxr), Wxn: Array.from(model.Wxn),
+        Uz: Array.from(model.Uz), Ur: Array.from(model.Ur), Un: Array.from(model.Un),
+        bz: Array.from(model.bz), br: Array.from(model.br), bn: Array.from(model.bn),
+        Why: Array.from(model.Why), by: Array.from(model.by)
+      }
+    };
+    if (withMoments) {
+      o.mW = pack(mW);
+      o.vW = pack(vW);
+      o.lessons = trainer.lessons;
+      o.reading = trainer.reading;
+    }
+    return o;
+  }
+
   function load() {
     try {
       var raw = localStorage.getItem(STORE);
       var p = raw ? JSON.parse(raw) : null;
       if (p && p.model && unpack(model, p.model)) {
-        model.steps = p.model.steps || 0;
+        model.steps = recoverSteps(p.model);
         model.loss = p.model.loss;
         model.ema = p.model.ema != null ? p.model.ema : p.model.loss;
         model.t = p.model.t || 0;
@@ -135,23 +162,17 @@
   }
 
   function persist() {
-    try {
-      localStorage.setItem(STORE, JSON.stringify({
-        model: {
-          kind: "gru-v7", steps: model.steps, loss: model.loss, ema: model.ema, t: model.t,
-          Wxz: Array.from(model.Wxz), Wxr: Array.from(model.Wxr), Wxn: Array.from(model.Wxn),
-          Uz: Array.from(model.Uz), Ur: Array.from(model.Ur), Un: Array.from(model.Un),
-          bz: Array.from(model.bz), br: Array.from(model.br), bn: Array.from(model.bn),
-          Why: Array.from(model.Why), by: Array.from(model.by)
-        },
-        mW: pack(mW),
-        vW: pack(vW),
-        lessons: trainer.lessons,
-        reading: trainer.reading
-      }));
-      trainer.lastPersist = Date.now();
-      if (global.NovaIDB && NovaIDB.backup) NovaIDB.backup();
-    } catch (e) {}
+    try { localStorage.setItem(STEPS_KEY, String(model.steps)); } catch (e0) {}
+    var full = brainJSON(true), ok = false;
+    try { localStorage.setItem(STORE, JSON.stringify(full)); ok = true; } catch (e) {}
+    if (!ok) {
+      /* v61: Safari's ~5 MB limit can reject the full save. Retry without the optimizer
+         moments (they rebuild while training) so weights + steps still land. */
+      try { delete full.mW; delete full.vW; localStorage.setItem(STORE, JSON.stringify(full)); ok = true; } catch (e2) {}
+    }
+    trainer.lastPersist = Date.now();
+    if (ok && global.NovaIDB && NovaIDB.backup) NovaIDB.backup();
+    return ok;
   }
 
   function sigm(x) { return 1 / (1 + Math.exp(-Math.max(-20, Math.min(20, x)))); }
@@ -661,9 +682,123 @@
   load();
   trainer.text = corpus();
 
+  /* v61: weights-only install. Lessons, reading and memories on this phone are kept as they are. */
+  var BACKUP = "nova-tiny-brain-v7-backup";
+  var SEED_URL = "brains/current.json?v=61";
+  var seedState = "none";
+  function installWeights(b) {
+    var src = {}, k;
+    for (k = 0; k < KEYS.length; k++) src[KEYS[k]] = b.weights[KEYS[k]];
+    if (!unpack(model, src)) return false;
+    model.steps = b.steps || 0;
+    model.loss = b.loss;
+    model.ema = b.ema != null ? b.ema : b.loss;
+    model.t = 0;
+    model.kind = "gru-v7";
+    mW = emptyMoments();
+    vW = emptyMoments();
+    return true;
+  }
+  function hasSavedBrain() {
+    try { return !!localStorage.getItem(STORE); } catch (e) { return true; }
+  }
+  /* Seed brain: only for a phone with NO saved brain. Missing/404/bad file = keep random init. */
+  function loadSeed() {
+    var S = global.NovaBrainStrip, f = global.fetch;
+    if (hasSavedBrain() || !S || typeof f !== "function") return Promise.resolve(seedState = hasSavedBrain() ? "own" : "none");
+    return Promise.resolve().then(function () { return f(SEED_URL); }).then(function (res) {
+      if (!res || !res.ok) return null;
+      return res.text();
+    }).then(function (txt) {
+      if (txt == null) return (seedState = "missing");
+      var r = S.strip(txt);
+      if (!r.ok) return (seedState = "bad");
+      /* Re-check: the phone may have saved its own brain while the file was downloading. */
+      if (hasSavedBrain() || model.steps > 0) return (seedState = "own");
+      if (!installWeights(r.brain)) return (seedState = "bad");
+      persist();
+      emit();
+      return (seedState = "seed");
+    }).catch(function () { return (seedState = "missing"); });
+  }
+  var seedReady = loadSeed();
+
+  function importBrainText(text) {
+    var S = global.NovaBrainStrip, r, prev;
+    if (!S) return "Import is not available.";
+    r = S.strip(text);
+    if (!r.ok) return "Import failed: " + r.error + " Your current brain was not changed.";
+    pause("Learning OFF for import.");
+    persist();
+    prev = localStorage.getItem(STORE);
+    try { if (prev) localStorage.setItem(BACKUP, prev); } catch (e) { return "Import failed: could not back up your current brain. Nothing changed."; }
+    if (!installWeights(r.brain)) {
+      load();
+      return "Import failed: weights do not fit. Your current brain was not changed.";
+    }
+    persist();
+    emit();
+    return "Brain imported: " + model.steps + " steps. Only weights were loaded; your lessons stayed. Say undo import to go back.";
+  }
+  function undoImport() {
+    var raw = localStorage.getItem(BACKUP);
+    if (!raw) return "There is no import to undo.";
+    pause("Learning OFF for undo.");
+    localStorage.setItem(STORE, raw);
+    localStorage.removeItem(BACKUP);
+    try { var bm = JSON.parse(raw).model || {}; localStorage.setItem(STEPS_KEY, String(Math.max(+bm.steps || 0, +bm.t || 0))); } catch (e) {}
+    model = emptyModel(); mW = emptyMoments(); vW = emptyMoments();
+    load();
+    trainer.text = corpus();
+    emit();
+    return "Import undone. Back to your old brain: " + model.steps + " steps.";
+  }
+  function importBrain() {
+    var input;
+    try {
+      input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.style.display = "none";
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        if (input.parentNode) input.parentNode.removeChild(input);
+        if (!file) return;
+        var rd = new FileReader();
+        rd.onload = function () {
+          var msg = importBrainText(String(rd.result || ""));
+          if (global.NovaNote) global.NovaNote(msg);
+        };
+        rd.readAsText(file);
+      });
+      document.body.appendChild(input);
+      input.click();
+    } catch (e) { return "Could not open the file picker."; }
+    return "Pick a nova-v7-*.json file from Files.";
+  }
+
   document.addEventListener("visibilitychange", function () {
     if (document.hidden && trainer.running) pause("paused because you left Nova");
   });
+
+  function shareFile(raw, name, title, what) {
+    var blob = new Blob([raw], { type: "application/json" });
+    var file, url, a;
+    try { file = new File([blob], name, { type: "application/json" }); } catch (e) { file = null; }
+    if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ title: title, text: name, files: [file] }).catch(function () {});
+      return "Share sheet opened. Tap Save to Files for " + name + " (" + what + ").";
+    }
+    url = URL.createObjectURL(blob);
+    a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 2000);
+    return "Saving " + name + " (" + what + "). If no file appears, open Nova in Safari and Export again.";
+  }
 
   global.NovaTrain = {
     start: start,
@@ -731,27 +866,24 @@
       return "v7 wiped.";
     },
     status: status,
+    importBrain: importBrain,
+    importBrainText: importBrainText,
+    undoImport: undoImport,
+    seedReady: function () { return seedReady; },
+    seedState: function () { return seedState; },
+    /* v61: export is read-only. It never calls persist() or touches storage; it builds the
+       file from the brain in memory, weights + steps only. Lessons have their own export. */
     exportBrain: function () {
-      persist();
-      var raw = localStorage.getItem(STORE) || "{}";
       var name = "nova-v7-" + model.steps + ".json";
-      var blob = new Blob([raw], { type: "application/json" });
-      var file, url, a;
-      try { file = new File([blob], name, { type: "application/json" }); } catch (e) { file = null; }
-      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ title: "Nova v7 brain", text: name, files: [file] }).catch(function () {});
-        return "Share sheet opened. Tap Save to Files for " + name + ".";
-      }
-      url = URL.createObjectURL(blob);
-      a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function () { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); }, 2000);
-      return "Saving " + name + " (" + model.steps + " steps). If no file appears, open Nova in Safari and Export again.";
+      var raw = JSON.stringify(brainJSON(false));
+      return shareFile(raw, name, "Nova v7 brain", model.steps + " steps");
     },
+    exportLessons: function () {
+      var name = "nova-lessons-" + trainer.lessons.length + ".json";
+      var raw = JSON.stringify({ kind: "nova-lessons-v1", lessons: trainer.lessons, reading: trainer.reading });
+      return shareFile(raw, name, "Nova lessons", trainer.lessons.length + " lessons, private: share only if you want to");
+    },
+    brainJSON: brainJSON,
     onUpdate: function (fn) { trainer.onUpdate = fn; }
   };
 })(window);

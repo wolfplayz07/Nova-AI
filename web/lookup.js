@@ -175,7 +175,51 @@
     var q = sanitize(s);
     if (/^(yes|y|yeah|yep|yup|yea)$/.test(q)) return "yes";
     if (/^(no|n|nope|nah)$/.test(q)) return "no";
+    return taughtYesNo(q);
+  }
+
+  /* v60: phrases the creator taught for yes / no ("remember yes means correct"). Built-in words always win. */
+  var YESNO = "nova-yesno-v1";
+  function readYesNo() {
+    var m;
+    try { m = JSON.parse(localStorage.getItem(YESNO) || "{}") || {}; } catch (e) { m = {}; }
+    if (!Array.isArray(m.yes)) m.yes = [];
+    if (!Array.isArray(m.no)) m.no = [];
+    return m;
+  }
+  function taughtYesNo(s) {
+    var q = sanitize(s).replace(/[.!?,]+$/g, "").trim(), m;
+    if (!q) return null;
+    m = readYesNo();
+    var y = m.yes.indexOf(q) !== -1, n = m.no.indexOf(q) !== -1;
+    if (y && !n) return "yes";
+    if (n && !y) return "no";
     return null;
+  }
+  function teachYesNo(side, phrase) {
+    var q = sanitize(phrase).replace(/[.!?,]+$/g, "").trim(), m, other;
+    if (side !== "yes" && side !== "no") return false;
+    if (!q || q === side || q.split(" ").length > 6) return false;
+    if (/^(yes|y|yeah|yep|yup|yea|no|n|nope|nah)$/.test(q)) return false; /* built-ins cannot be re-taught */
+    m = readYesNo();
+    other = side === "yes" ? "no" : "yes";
+    m[other] = m[other].filter(function (x) { return x !== q; }); /* newest teaching wins */
+    if (m[side].indexOf(q) === -1) m[side].push(q);
+    try { localStorage.setItem(YESNO, JSON.stringify(m)); } catch (e) {}
+    return true;
+  }
+
+  /* v60: after "no" to a dictionary remember-it, only a line that reads like a definition is saved. */
+  function readsLikeDefinition(line, term) {
+    var t = sanitize(line).replace(/[.!]+$/g, "").trim(), T = global.NovaTrain, w;
+    if (!t || /\?\s*$/.test(String(line || ""))) return false;
+    if (/^(yes|no|y|n|yeah|yep|nope|nah|ok|okay|k|lol|haha|hmm|hm|um|uh|thanks|thank you|thx|cool|nice|whatever|idk|hi|hello|hey|bye|good night|goodnight)\b/.test(t)) return false;
+    if (/^(i|i'm|im|i've|ive|i'll|ill|i'd|you|you're|youre|we|they|he|she|my|your|let's|lets|please|can|could|will|would|do|does|did|are|is)\b/.test(t)) return false;
+    if (/^(it|that)\s+(is|means)\s+\S/.test(t)) return true;
+    w = stripArticle(String(term || ""));
+    if (w && new RegExp("^(?:(?:a|an|the)\\s+)?" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "s?\\s+(?:is|are|means)\\s+\\S").test(t)) return true;
+    if (T && T.wordSalad && T.wordSalad(t)) return false;
+    return t.split(" ").length >= 2 && t.length <= 180;
   }
 
   function getPending() {
@@ -479,6 +523,12 @@
       clearPending();
       return "ok. skipped.";
     }
+    /* v60: "it means ..." / "that is ..." answers the open word, never teaches the word "it". */
+    var itm = pend.term && sanitize(text).replace(/[.!]+$/g, "").match(/^(?:it|that)\s+(?:is|means)\s+(.+)$/);
+    if (itm && (!pend.dictNo || readsLikeDefinition(text, pend.term)) && saveUser(pend.term, itm[1], text)) {
+      clearPending();
+      return "saved your meaning of " + pend.term + ".";
+    }
     if (isExplicitTeachPhrase(text) && !/^fix[:\s]/.test(sanitize(text)) && !/^no[,:]\s*/.test(sanitize(text))) {
       return null;
     }
@@ -498,6 +548,10 @@
     if (pend.kind === "yn" || isYesNoQuestion(pend.question)) {
       yn = normYesNo(answer);
       if (yn) answer = yn;
+    }
+    if (pend.dictNo && !readsLikeDefinition(answer, pend.term)) {
+      clearPending();
+      return null;
     }
     if (pend.term) {
       var dm = declarative(answer);
@@ -671,6 +725,10 @@
 
   /* v43: read-only helpers for new-words.js (the what-is pending slot and facts). */
   global.NovaLookup = {
+    taughtYesNo: taughtYesNo,
+    teachYesNo: teachYesNo,
+    readYesNo: readYesNo,
+    saveUser: saveUser,
     setPending: setPending,
     getPending: getPending,
     readFacts: readFacts,

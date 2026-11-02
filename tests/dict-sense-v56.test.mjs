@@ -40,13 +40,13 @@ test("tree talk picks the tree sense", () => {
   n.stop();
 });
 
-test("context that does not decide: list two senses, pick with 1/2/first/second, what else still works", () => {
+test("context that does not decide: list every sense (v59: not just two), pick with 1/2/first/second, what else still works", () => {
   for (const [pick, want] of [["1", /\(noun\): tough/], ["first", /\(noun\): tough/], ["2", /\(verb\): speak/], ["second", /\(verb\): speak/]]) {
     const n = start();
     n.say("hello there");
     n.say("i like pizza a lot");
     const r = n.say("what is a bark");
-    assert.equal(r, "dictionary says bark can mean: 1) (noun) tough protective covering of the woody stems and roots of trees and other woody plants 2) (verb) speak in an unfriendly tone. which one?");
+    assert.match(r, /^dictionary says bark can mean: 1\) \(noun\) tough protective covering .* 2\) \(verb\) speak in an unfriendly tone 3\) .* 9\) \(verb\) tan \(a skin\) with bark tannins\. which one\?$/);
     const got = n.say(pick);
     assert.match(got, want);
     assert.match(got, /want me to remember it\?$/);
@@ -56,8 +56,8 @@ test("context that does not decide: list two senses, pick with 1/2/first/second,
   const n = start();
   n.say("i like pizza a lot");
   n.say("what is a bark");
-  assert.equal(n.say("what else"), "those are the only meanings i have from the dictionary. say 1 or 2.");
-  assert.equal(n.say("yes"), "which one? say 1 or 2.");
+  assert.equal(n.say("what else"), "those are the only meanings i have from the dictionary. say a number from 1 to 9.");
+  assert.equal(n.say("yes"), "which one? say a number from 1 to 9.");
   assert.match(n.say("2"), /speak in an unfriendly tone/);
   assert.equal(n.say("what else"), "dictionary also says: bark (noun): tough protective covering of the woody stems and roots of trees and other woody plants. want me to remember it?");
   n.stop();

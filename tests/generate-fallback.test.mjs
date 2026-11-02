@@ -111,8 +111,8 @@ test("math and locked facts stay ahead of generate", () => {
 test("owner commands still work while generate is stubbed", () => {
   const n = boot();
   stub(n, () => "tzz52");
-  assert.equal(n.say("when i say hello there say hi kevin"), "lesson saved.");
-  assert.equal(n.say("hello there"), "hi kevin");
+  assert.equal(n.say("when i say hello there say hi friend"), "lesson saved.");
+  assert.equal(n.say("hello there"), "hi friend");
   assert.equal(n.say("puppy means a young dog that plays"), "saved your meaning.");
   assert.equal(n.say("what is a puppy"), "a young dog that plays");
   assert.equal(n.say("my puppy"), "a young dog that plays");

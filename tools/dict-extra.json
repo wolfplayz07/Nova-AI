@@ -1,0 +1,9 @@
+{
+  "_note": "v59: common modern meanings Princeton WordNet 3.0 does not have. Same shape as a shard sense: [pos, gloss, examples, synonyms].",
+  "single": [["n", "a recording of one song released on its own", ["the band's new single", "their latest single is out now"], ["song", "track", "release"]]],
+  "album": [["n", "a collection of songs released together", ["their new album"], ["record", "release"]]],
+  "track": [["n", "one song on an album or recording", ["the third track on the album"], ["song"]]],
+  "stream": [["v", "watch or listen to something over the internet as it plays", ["i stream music on my phone"], ["watch", "listen"]]],
+  "post": [["n", "a message or picture shared online", ["a new post on her page"], ["message", "update"]]],
+  "app": [["n", "a program you use on a phone or computer", ["download the app"], ["program", "application"]]]
+}

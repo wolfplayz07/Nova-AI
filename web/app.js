@@ -155,7 +155,10 @@ function runBrain(act) {
     var st = T.status();
     note("Learning: " + !!(st.learning || st.running) + ". Steps: " + st.steps + ". Loss (smooth): " + st.loss + ". Raw: " + st.raw + ". LR: " + st.lr + ". Lessons: " + (st.lessons || 0));
   } else if (act === "export") note(T.exportBrain());
+  else if (act === "import") note(T.importBrain());
+  else if (act === "lessons") note(T.exportLessons());
 }
+window.NovaNote = function (t) { note(t); };
 
 function closeMenu() {
   if (brainMenu) brainMenu.hidden = true;
@@ -305,7 +308,7 @@ function render() {
   if (!chat.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML = "<h2>Nova v7</h2><p>Say <b>start learning</b> to train while you talk. <b>stop learning</b> freezes weights. Paste <b>read ...</b> for text.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Learn</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button></div>";
+    empty.innerHTML = "<h2>Nova v7</h2><p>Say <b>start learning</b> to train while you talk. <b>stop learning</b> freezes weights. Paste <b>read ...</b> for text.</p><div class=\"chips\"><button class=\"chip\" data-act=\"toggle\">Learn</button><button class=\"chip\" data-act=\"sample\">Sample</button><button class=\"chip\" data-act=\"export\">Export brain</button><button class=\"chip\" data-act=\"import\">Import brain</button></div>";
     feed.appendChild(empty);
     feed.querySelectorAll("[data-act]").forEach(function (btn) {
       btn.onclick = function () { runBrain(btn.getAttribute("data-act")); };
@@ -338,6 +341,45 @@ function render() {
     }
   });
   feed.scrollTop = feed.scrollHeight;
+}
+
+/* v60: "remember X means Y", "X means Y", "X = Y", "X stands for Y". Returns { key, value, explicit } or null. */
+function parseMeaning(raw) {
+  var text = String(raw || "").trim().replace(/[.!]+$/, ""), explicit = false, m, key, value;
+  if (/^remember\b/i.test(text)) { explicit = true; text = text.slice(8).trim().replace(/^that\s+/i, ""); }
+  m = text.match(/^(?:that\s+)?["']?(.+?)["']?\s+(?:means|stands for|=)\s+["']?(.+?)["']?$/i);
+  if (!m && explicit) m = text.match(/^["']?(.+?)["']?\s*=\s*["']?(.+?)["']?$/);
+  if (!m) return null;
+  key = m[1].trim().toLowerCase().replace(/^(a|an|the)\s+/, "");
+  value = m[2].trim();
+  if (!key || !value || !/^[a-z][a-z' -]*$/.test(key) || key.split(/\s+/).length > 4) return null;
+  if (!explicit && !/\b(means|stands for)\b/i.test(text) && (key.length < 2 || /^[\d\s.+\-*\/]+$/.test(value))) return null;
+  if (/^(it|that|this|what|who|which|how|why|where|when|he|she|they|you|i|we|my|your|does|do)$/.test(key.split(/\s+/)[0])) return null;
+  return { key: key, value: value, explicit: explicit };
+}
+
+function yesNoSide(w) {
+  var q = String(w || "").toLowerCase().replace(/[.!?,"']+/g, "").trim();
+  if (/^(yes|y|yeah|yep|yup|yea)$/.test(q)) return "yes";
+  if (/^(no|n|nope|nah)$/.test(q)) return "no";
+  return null;
+}
+
+function teachMeaning(mm) {
+  var L = window.NovaLookup, side = yesNoSide(mm.key), back = yesNoSide(mm.value), list, cur;
+  state.memories = state.memories || {};
+  cur = state.memories[mm.key];
+  list = cur ? String(cur).split(/\s*;\s*/) : [];
+  if (list.map(function (x) { return x.toLowerCase(); }).indexOf(mm.value.toLowerCase()) === -1) list.push(mm.value);
+  state.memories[mm.key] = list.join("; ");
+  try { if (L && L.saveUser) L.saveUser(mm.key, mm.value, mm.key + " means " + mm.value); } catch (e) {}
+  try {
+    if (L && L.teachYesNo) {
+      if (side) L.teachYesNo(side, mm.value);
+      else if (back) L.teachYesNo(back, mm.key);
+    }
+  } catch (e2) {}
+  return "Got it. \"" + mm.key + "\" means \"" + mm.value + "\"." + (list.length > 1 ? " (" + mm.key + ": " + list.join(", ") + ")" : "");
 }
 
 function parseRemember(raw) {
@@ -373,6 +415,9 @@ function reply(text) {
   if (T && (lower === "pause" || lower === "stop" || lower === "pause train" || lower === "stop train" || lower === "stop training" || lower === "stop learning" || lower === "pause learning" || lower === "stop learn")) return T.pause();
   if (T && (lower === "sample" || lower === "speak brain")) return "Tiny brain sample:\n" + T.sample(50);
   if (T && (lower === "export brain" || lower === "export")) return T.exportBrain();
+  if (T && T.exportLessons && lower === "export lessons") return T.exportLessons();
+  if (T && T.importBrain && (lower === "import brain" || lower === "import")) return T.importBrain();
+  if (T && T.undoImport && lower === "undo import") return T.undoImport();
   if (T && lower === "reset brain confirm") return T.resetConfirm();
   if (T && (lower === "reset brain" || lower === "wipe brain")) return T.reset();
   if (T && (lower === "train status" || lower === "brain status")) {
@@ -394,6 +439,8 @@ function reply(text) {
     if (!memories.length) return "Local memory is empty.";
     return memories.map(function (m) { return "- " + m.key + ": " + m.value; }).join("\n");
   }
+  var meant = parseMeaning(text);
+  if (meant && (meant.explicit || yesNoSide(meant.key) || yesNoSide(meant.value) || !/\bmeans\b/i.test(text))) return teachMeaning(meant);
   var remembered = parseRemember(text);
   if (remembered) {
     state.memories = state.memories || {};
@@ -438,7 +485,7 @@ function send(text) {
   if (window.NovaTrain && NovaTrain.isLearning && NovaTrain.isLearning() && NovaTrain.learnPair) {
     var lower = cleaned.toLowerCase();
     var ansLow = String(answer || "").toLowerCase().trim();
-    var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|reset |train status|brain status|speak brain)/.test(lower);
+    var isCmd = /^(train|pause|stop|sample|learn|start |stop |pause |export|export lessons|import|undo import|reset |train status|brain status|speak brain)/.test(lower);
     var isUnknown = isUnknownAnswer(answer);
     var isAck = /^(got it|lesson saved|saved|locked|updated|ok\. skipped|added reading|already learning|learning on|learning off)\b/.test(ansLow);
     /* Corrections already pushLesson inside train.js; do not train unknown→unknown or ack noise. */

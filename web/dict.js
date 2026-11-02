@@ -9,7 +9,7 @@
   var OFFER = "nova-dict-offer-v1";
   var NOSAVE = "nova-dict-nosave-v1";
   var BASE = "dict/";
-  var DICT_CACHE = "nova-dict-wn30-v1"; /* must match sw.js */
+  var DICT_CACHE = "nova-dict-wn30-v2"; /* must match sw.js */
   var TTL = 10 * 60 * 1000;
   var POS = { n: "noun", v: "verb", a: "adjective", r: "adverb" };
   var shards = {};
@@ -186,37 +186,48 @@
     try { if (typeof global.currentChat === "function") msgs = global.currentChat().messages || []; } catch (e) { msgs = []; }
     return msgs.slice(-7).map(function (m) { return String((m && m.content) || ""); });
   }
-  /* Returns { pick: index } for a clear winner, { top: [i, j] } for a tie or no overlap. */
+  /* Returns { pick: index } for a clear winner, { top: [i, j, ...] } for a tie or no overlap.
+     v59: chat overlap still only weighs the two main senses (as v56), but a tie now lists
+     every sense the dictionary has, not just two. */
   function pickSense(e, term) {
-    var n = e.senses.length, base = stem(clean(term)), self = stem(e.word), ctx = {}, scores = [], i, order;
+    var n = e.senses.length, m = Math.min(n, 2), base = stem(clean(term)), self = stem(e.word), ctx = {}, scores = [], i, order;
     if (n < 2) return { pick: 0 };
     recentLines().forEach(function (l) {
       contentWords(l).forEach(function (w) { if (w !== base && w !== self) ctx[w] = 1; });
     });
     if (!Object.keys(ctx).length) return { pick: 0, scores: [] }; /* fresh chat: plain first sense, as before */
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < m; i++) {
       var g = expand(contentWords(e.senses[i][1])), sc = 0;
       for (var w in ctx) if (g[w]) sc += 1;
       scores.push(sc);
     }
     order = scores.map(function (s, k) { return k; }).sort(function (a, b) { return scores[b] - scores[a] || a - b; });
     if (scores[order[0]] > 0 && scores[order[0]] > scores[order[1]]) return { pick: order[0], scores: scores };
-    return { top: [order[0], order[1]], scores: scores };
+    for (i = m; i < n; i++) order.push(i);
+    return { top: order, scores: scores };
   }
   function brief(e, i) {
-    var s = e.senses[i];
-    return "(" + (POS[s[0]] || "word") + ") " + gloss(s[1]);
+    var s = e.senses[i], g = gloss(s[1]).split(" ");
+    return "(" + (POS[s[0]] || "word") + ") " + g.slice(0, 10).join(" ") + (g.length > 10 ? "..." : "");
   }
+  /* v59: "1) (noun) ... 2) (verb) ... 3) ..." for every listed sense */
+  function listSenses(e, idx) {
+    return idx.map(function (i, k) { return (k + 1) + ") " + brief(e, i); }).join(" ");
+  }
+  function sayNumber(n) { return n <= 2 ? "say 1 or 2." : "say a number from 1 to " + n + "."; }
 
   /* Reply for a word Nova has no locked/user meaning for. null when the dictionary has nothing.
      lead set = an auto-words offer (v43/v50): never asks "which one?", uses a clear winner or sense 1. */
-  function offer(term, lead) {
+  /* v59: pickIdx (from senses.js usage scoring) forces a sense; pickIdx = array -> ask with those. */
+  function offer(term, lead, pickIdx) {
     var e = entry(term), p, i;
     if (!e) return null;
-    p = pickSense(e, term);
+    if (Array.isArray(pickIdx)) p = { top: pickIdx };
+    else if (pickIdx != null && e.senses[pickIdx]) p = { pick: pickIdx };
+    else p = pickSense(e, term);
     if (!lead && p.top) {
       writeOffer({ term: clean(term), entry: e, i: p.top[0], choose: p.top, at: Date.now() });
-      return "dictionary says " + e.word + " can mean: 1) " + brief(e, p.top[0]) + " 2) " + brief(e, p.top[1]) + ". which one?";
+      return "dictionary says " + e.word + " can mean: " + listSenses(e, p.top) + ". which one?";
     }
     i = p.pick != null ? p.pick : 0;
     var line = (lead || "") + "dictionary says: " + sense(e, i) + ".";
@@ -228,12 +239,19 @@
     return line + " want me to remember it?";
   }
 
-  function isYes(q) { return /^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|please|remember it|save it|remember that|save that|do it)$/.test(q); }
-  function isNo(q) { return /^(no|n|nope|nah|no thanks|no thank you|dont|don't|do not|skip|nevermind|never mind|cancel|forget it|not now)$/.test(q); }
-  function isPick(q) {
-    if (/^(1|one|first|the first|first one|the first one|number 1|number one)$/.test(q)) return 0;
-    if (/^(2|two|second|the second|second one|the second one|number 2|number two)$/.test(q)) return 1;
-    return -1;
+  function taught(q) { var L = global.NovaLookup; try { return L && L.taughtYesNo ? L.taughtYesNo(q) : null; } catch (e) { return null; } }
+  function isYes(q) { return taught(q) === "yes" || /^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|please|remember it|save it|remember that|save that|do it)$/.test(q); }
+  function isNo(q) { return taught(q) === "no" || /^(no|n|nope|nah|no thanks|no thank you|dont|don't|do not|skip|nevermind|never mind|cancel|forget it|not now)$/.test(q); }
+  /* "1" / "one" / "first" / "the third one" / "number 4" -> 0-based index, -1 if not a pick */
+  var NUMW = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  var ORDW = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"];
+  function isPick(q, max) {
+    var m = String(q || "").replace(/^(?:the |number |no )/, "").replace(/ one$/, "").replace(/^(?:the )/, ""), k = -1;
+    if (/^\d{1,2}$/.test(m)) k = parseInt(m, 10) - 1;
+    else if (NUMW.indexOf(m) >= 0) k = NUMW.indexOf(m);
+    else if (ORDW.indexOf(m) >= 0) k = ORDW.indexOf(m);
+    if (k < 0 || k >= (max || 2)) return -1;
+    return k;
   }
   function isMore(q) { return /^(what else|other meaning|another meaning|next meaning|any other meaning|what else does it mean)$/.test(q); }
 
@@ -251,7 +269,7 @@
     if (!o) return null;
     var q = clean(text).replace(/[.!?]+$/, ""), k, n;
     if (o.choose) { /* v56: "which one?" is open */
-      k = isPick(q);
+      k = isPick(q, o.choose.length);
       if (k >= 0) {
         o.i = o.choose[k];
         o.seen = [o.i];
@@ -262,11 +280,11 @@
         return "dictionary says: " + sense(o.entry, o.i) + ". want me to remember it?";
       }
       if (isNo(q)) { clearOffer(); return "ok. not saved."; }
-      if (isYes(q)) return "which one? say 1 or 2.";
+      if (isYes(q)) return "which one? " + sayNumber(o.choose.length);
       if (isMore(q)) {
         o.seen = o.choose.slice(); delete o.choose;
         for (n = 0; n < o.entry.senses.length; n++) if (o.seen.indexOf(n) === -1) break;
-        if (n >= o.entry.senses.length) { o.at = Date.now(); o.choose = o.seen; writeOffer(o); return "those are the only meanings i have from the dictionary. say 1 or 2."; }
+        if (n >= o.entry.senses.length) { o.at = Date.now(); o.choose = o.seen; writeOffer(o); return "those are the only meanings i have from the dictionary. " + sayNumber(o.choose.length); }
         o.i = n; o.seen.push(n); o.at = Date.now(); writeOffer(o);
         return "dictionary also says: " + sense(o.entry, o.i) + ". want me to remember it?";
       }
