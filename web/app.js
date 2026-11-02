@@ -340,6 +340,45 @@ function render() {
   feed.scrollTop = feed.scrollHeight;
 }
 
+/* v60: "remember X means Y", "X means Y", "X = Y", "X stands for Y". Returns { key, value, explicit } or null. */
+function parseMeaning(raw) {
+  var text = String(raw || "").trim().replace(/[.!]+$/, ""), explicit = false, m, key, value;
+  if (/^remember\b/i.test(text)) { explicit = true; text = text.slice(8).trim().replace(/^that\s+/i, ""); }
+  m = text.match(/^(?:that\s+)?["']?(.+?)["']?\s+(?:means|stands for|=)\s+["']?(.+?)["']?$/i);
+  if (!m && explicit) m = text.match(/^["']?(.+?)["']?\s*=\s*["']?(.+?)["']?$/);
+  if (!m) return null;
+  key = m[1].trim().toLowerCase().replace(/^(a|an|the)\s+/, "");
+  value = m[2].trim();
+  if (!key || !value || !/^[a-z][a-z' -]*$/.test(key) || key.split(/\s+/).length > 4) return null;
+  if (!explicit && !/\b(means|stands for)\b/i.test(text) && (key.length < 2 || /^[\d\s.+\-*\/]+$/.test(value))) return null;
+  if (/^(it|that|this|what|who|which|how|why|where|when|he|she|they|you|i|we|my|your|does|do)$/.test(key.split(/\s+/)[0])) return null;
+  return { key: key, value: value, explicit: explicit };
+}
+
+function yesNoSide(w) {
+  var q = String(w || "").toLowerCase().replace(/[.!?,"']+/g, "").trim();
+  if (/^(yes|y|yeah|yep|yup|yea)$/.test(q)) return "yes";
+  if (/^(no|n|nope|nah)$/.test(q)) return "no";
+  return null;
+}
+
+function teachMeaning(mm) {
+  var L = window.NovaLookup, side = yesNoSide(mm.key), back = yesNoSide(mm.value), list, cur;
+  state.memories = state.memories || {};
+  cur = state.memories[mm.key];
+  list = cur ? String(cur).split(/\s*;\s*/) : [];
+  if (list.map(function (x) { return x.toLowerCase(); }).indexOf(mm.value.toLowerCase()) === -1) list.push(mm.value);
+  state.memories[mm.key] = list.join("; ");
+  try { if (L && L.saveUser) L.saveUser(mm.key, mm.value, mm.key + " means " + mm.value); } catch (e) {}
+  try {
+    if (L && L.teachYesNo) {
+      if (side) L.teachYesNo(side, mm.value);
+      else if (back) L.teachYesNo(back, mm.key);
+    }
+  } catch (e2) {}
+  return "Got it. \"" + mm.key + "\" means \"" + mm.value + "\"." + (list.length > 1 ? " (" + mm.key + ": " + list.join(", ") + ")" : "");
+}
+
 function parseRemember(raw) {
   var text = raw.trim();
   var lower = text.toLowerCase();
@@ -394,6 +433,8 @@ function reply(text) {
     if (!memories.length) return "Local memory is empty.";
     return memories.map(function (m) { return "- " + m.key + ": " + m.value; }).join("\n");
   }
+  var meant = parseMeaning(text);
+  if (meant && (meant.explicit || yesNoSide(meant.key) || yesNoSide(meant.value) || !/\bmeans\b/i.test(text))) return teachMeaning(meant);
   var remembered = parseRemember(text);
   if (remembered) {
     state.memories = state.memories || {};

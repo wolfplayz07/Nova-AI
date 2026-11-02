@@ -239,8 +239,9 @@
     return line + " want me to remember it?";
   }
 
-  function isYes(q) { return /^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|please|remember it|save it|remember that|save that|do it)$/.test(q); }
-  function isNo(q) { return /^(no|n|nope|nah|no thanks|no thank you|dont|don't|do not|skip|nevermind|never mind|cancel|forget it|not now)$/.test(q); }
+  function taught(q) { var L = global.NovaLookup; try { return L && L.taughtYesNo ? L.taughtYesNo(q) : null; } catch (e) { return null; } }
+  function isYes(q) { return taught(q) === "yes" || /^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|please|remember it|save it|remember that|save that|do it)$/.test(q); }
+  function isNo(q) { return taught(q) === "no" || /^(no|n|nope|nah|no thanks|no thank you|dont|don't|do not|skip|nevermind|never mind|cancel|forget it|not now)$/.test(q); }
   /* "1" / "one" / "first" / "the third one" / "number 4" -> 0-based index, -1 if not a pick */
   var NUMW = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
   var ORDW = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"];

@@ -235,3 +235,10 @@ All 65 tests pass (`node --test tests/`): the 52 earlier ones, including the Jar
   - **"which one?"** is asked only when the sentence gives no clue, and it now lists every meaning. The creator answers with any number ("7", "the third one"). The v56 dictionary "which one?" lists every meaning too.
   - The v58 rule is unchanged: a question with its own wording ("what is a bark", "a piece of bark") beats the chat. Locked meanings, "i do not know", yes/no, what-is + Skip, owner commands and the NovaBridge.ask shape are unchanged too.
   - **Tests:** `tests/senses-v59.test.mjs` adds 21 tests; one v56 test now expects the full list. All 183 pass. **Demo:** `/workspace/nova-demo/v59_demo.mp4`.
+
+- **2026-11-01 · v60: "remember X means Y" teaches a meaning, meanings stack, taught yes/no count (medium).** On the creator's iPhone, "Remember yes means correct" replied 'Got it. Saved "note" on this phone.'
+  - **Parsing:** "remember X means Y", "remember X = Y", "remember X stands for Y", and bare "X = Y" / "X stands for Y" (plus "yes/no means Y") now save X → Y instead of a "note". The reply repeats both: 'Got it. "yes" means "correct".' When a word has several meanings it lists them: "(yes: correct, right)". Plain "cat means …" still replies "saved your meaning.", and "remember my X is Y" and plain "remember …" notes are unchanged.
+  - **Several meanings:** each new meaning is added to the word's list in memory and as a taught sense in `web/senses.js`. Nothing is overwritten.
+  - **Yes/no:** phrases taught for yes or for no (`nova-yesno-v1`; also "correct means yes") count as yes or no in yes/no detection (`normYesNo`) and in dictionary "remember it?" answers. Built-in yes/no words always win and can't be re-taught.
+  - **v56 fix:** after "no" to "remember it?", the next line is saved only when it reads like a definition. "ok", "lol thanks", "i am hungry" and "you are funny" are no longer saved. "it means …" now saves under the open word instead of under "it".
+  - **Tests:** `tests/remember-means-v60.test.mjs` adds 23 tests; all 206 pass. **Demo:** `/workspace/nova-demo/v60_demo.mp4`.
