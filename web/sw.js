@@ -1,10 +1,19 @@
-const CACHE = "nova-local-v60";
+const CACHE = "nova-local-v61";
 /* v44: dictionary shards (web/dict/*.json) never change within a dictionary build, so they live
    in their own cache that survives app version bumps. Rename DICT_CACHE when the shards are rebuilt. */
 const DICT_CACHE = "nova-dict-wn30-v2";
 
-self.addEventListener("install", function () {
+/* v61: try to keep the seed brain offline. A missing current.json is fine (fresh phones keep random init). */
+const SEED = "./brains/current.json?v=61";
+self.addEventListener("install", function (event) {
   self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE).then(function (cache) {
+      return fetch(SEED, { cache: "no-store" }).then(function (res) {
+        if (res && res.ok) return cache.put(SEED, res);
+      }).catch(function () {});
+    })
+  );
 });
 
 self.addEventListener("activate", function (event) {

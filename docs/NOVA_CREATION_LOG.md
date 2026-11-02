@@ -242,3 +242,10 @@ All 65 tests pass (`node --test tests/`): the 52 earlier ones, including the Jar
   - **Yes/no:** phrases taught for yes or for no (`nova-yesno-v1`; also "correct means yes") count as yes or no in yes/no detection (`normYesNo`) and in dictionary "remember it?" answers. Built-in yes/no words always win and can't be re-taught.
   - **v56 fix:** after "no" to "remember it?", the next line is saved only when it reads like a definition. "ok", "lol thanks", "i am hungry" and "you are funny" are no longer saved. "it means …" now saves under the open word instead of under "it".
   - **Tests:** `tests/remember-means-v60.test.mjs` adds 23 tests; all 206 pass. **Demo:** `/workspace/nova-demo/v60_demo.mp4`.
+
+## 2026-11-02 — v61: a shared starting brain, import, and an honest step counter
+
+- **A starting brain for everyone.** The creator decided his own v7 brain becomes the base brain. A brand-new phone downloads it once (it then works offline); a phone that already has its own brain is never overwritten. The real file is added once the creator exports it.
+- **Weights only.** A strip script keeps only the numbers the network learned and its step count. Lessons, memories, notes and diary text never leave the phone with it.
+- **Import and undo.** `import brain` loads a saved brain file from Files after backing up the current one; `undo import` puts the old one back. Bad files are refused.
+- **Export no longer touches the brain.** Export used to save first and then read storage. It now just reads what is in memory, the file includes the step count, and the step counter also lives in its own small key so it cannot slip back to 0. `export lessons` is a separate file.
