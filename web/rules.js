@@ -25,7 +25,7 @@
   var KEEP = {};
   ("news bus gas yes this always series species physics glass grass class dress boss less mess loss cactus virus " +
    "bonus lens chaos iris tennis thing king ring sing spring string wing swing bring sting ceiling evening morning " +
-   "nothing something red bed shed sled need seed feed speed weed bleed hundred wed").split(" ").forEach(function (w) { KEEP[w] = 1; });
+   "nothing something clothes red bed shed sled need seed feed speed weed bleed hundred wed").split(" ").forEach(function (w) { KEEP[w] = 1; });
   var IRREG = { kept: "keep", made: "make", got: "get", ran: "run", went: "go", gone: "go", wore: "wear", worn: "wear",
     ate: "eat", eaten: "eat", fell: "fall", fallen: "fall", froze: "freeze", frozen: "freeze", children: "child",
     people: "person", men: "man", women: "woman", feet: "foot", teeth: "tooth", mice: "mouse", geese: "goose",
@@ -59,12 +59,12 @@
     if (/ing$/.test(w) && w.length > 5) {
       b = w.slice(0, -3);
       if (/([b-df-hj-np-tv-z])\1$/.test(b)) c.push(b.slice(0, -1));
-      c.push(b, b + "e");
+      c.push(b + "e", b); /* making -> make before "mak"; raining -> rain ("raine" is not a word) */
     }
     if (/ed$/.test(w) && w.length > 4) {
       d = w.slice(0, -2);
       if (/([b-df-hj-np-tv-z])\1$/.test(d)) c.push(d.slice(0, -1));
-      c.push(d, w.slice(0, -1));
+      c.push(w.slice(0, -1), d);
     }
     if (!c.length) return w;
     if (D && D.entry) {
@@ -201,12 +201,14 @@
       for (i = 0; i < paths.length; i++) {
         p = paths[i]; last = p.path[p.path.length - 1];
         if (last.cond && subset(xt, p.have) && /\b(need|needs|should|must|take|bring|wear|use)\b/.test(clean(last.to))) return { yes: true, path: p.path };
+        if (p.path.length >= MAX_HOPS) continue; /* the protective edge is a hop too: 3 edges at most */
         hit = protective(p.have, xt, rules, at, false);
         if (hit) return { yes: true, path: p.path.concat([hit]) };
       }
       hit = protective(at, xt, rules, at, false); /* "an umbrella protects you from rain" */
       if (hit) return { yes: true, path: [hit] };
       for (i = 0; i < paths.length; i++) { /* "an umbrella does not keep you warm" against a cold problem */
+        if (paths[i].path.length >= MAX_HOPS) continue;
         hit = protective(paths[i].have, xt, rules, at, true);
         if (hit) return { yes: false, path: paths[i].path.concat([hit]) };
       }
