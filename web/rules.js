@@ -38,7 +38,9 @@
     (OPP[p[0]] = OPP[p[0]] || []).push(p[1]); (OPP[p[1]] = OPP[p[1]] || []).push(p[0]);
   });
   var PROTECT = /^(keeps|protects|prevents|stops|blocks|saves|shields)$/;
-  var CAUSE = /^(makes|causes|leads to|brings|gives|gets|then|is|can|has)$/;
+  /* only effect relations chain; "birds can fly" / "ice is cold" / "cars have wheels" describe the subject
+     and never make "will I fly?" true */
+  var CAUSE = /^(makes|causes|leads to|brings|gives|gets|then)$/;
 
   function clean(s) { return String(s || "").toLowerCase().replace(/\u2019/g, "'").replace(/[^a-z0-9' ,\-]/g, " ").replace(/\s+/g, " ").trim(); }
   function dictKnows(w) {
@@ -233,6 +235,8 @@
     m = t.match(/^(?:if|when|whenever)\s+(.+?),?\s+((?:should|do|does|will|would|can|must)\s+.+)$/);
     if (m && m[1].indexOf(",") === -1 || (m = m || t.match(/^(?:if|when|whenever)\s+([^,]+),\s*((?:should|do|does|will|would|can|is|are|must)\s+.+)$/))) { cond = m[1]; main = m[2]; ifq = true; }
     else if ((m = t.match(/^((?:should|do|does|will|would|can|is|are|must)\b.+?)\s+(?:if|when|whenever)\s+(.+)$/))) { main = m[1]; cond = m[2]; ifq = true; }
+    /* "when it is warm you do not need a coat" is a statement, not "when it is warm you / do ...?" */
+    if (ifq && (/\s(you|we|i|they|people)$/.test(cond) || /^\w+\s+not\b/.test(main) || /^\w+n't\b/.test(main))) return null;
     verb = main.match(/^(?:should|do|must)\s+(?:i|we)\s+(need\s+(?:to\s+)?|have\s+to\s+)?(bring|take|wear|use|get|carry|pack|have|buy)?\s*(.+)$/);
     if (verb && !/^(?:get|be)\s/.test(verb[3]) && !(verb[2] === "get" && OPP[toks(verb[3])[0]])) { kind = "need"; target = verb[3]; }
     else if (ifq && (m = main.match(/^(?:will|would|can|do|does|is|are)\s+(i|we|you|it|the\s+\w+|\w+)\s+(?:get|be|become|stay|feel)?\s*(.+)$/))) {

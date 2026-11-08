@@ -241,3 +241,50 @@ test("bounded reasoning stays fast on a 2000-edge graph", () => {
   assert.ok(ms < 50, "avg " + ms.toFixed(2) + " ms");
   n.stop();
 });
+
+test("negative: 'an umbrella does NOT keep you dry' never yields yes", () => {
+  const n = start();
+  n.say("rain makes you wet");
+  assert.equal(n.say("an umbrella does not keep you dry"), "got it: umbrella \u2192 does not keep you dry.");
+  const out = n.say(UMB);
+  assert.doesNotMatch(out, /^(yes|probably yes)\b/);
+  assert.equal(out, "no, because rain makes you wet and an umbrella does not keep you dry.");
+  n.stop();
+});
+
+test("negative: 'rain usually makes you wet' never becomes certainty", () => {
+  const n = start();
+  assert.equal(n.say("rain usually makes you wet"), "got it: rain \u2192 usually makes you wet.");
+  assert.equal(rules(n)[0].qual, "usually");
+  n.say("an umbrella keeps you dry");
+  assert.equal(n.say(UMB), "probably yes, because rain usually makes you wet and an umbrella keeps you dry.");
+  assert.equal(n.say("if it rains will I get wet?"), "probably yes, because rain usually makes you wet.");
+  n.stop();
+});
+
+test("negative: unrelated conditions never yield recommendations", () => {
+  const n = start();
+  for (const l of ["rain makes you wet", "an umbrella keeps you dry", "the sun makes you hot", "music makes you happy"]) n.say(l);
+  for (const q of ["if it is sunny should I bring an umbrella?", "if music plays should I bring an umbrella?", "if there is music do I need an umbrella?"]) {
+    assert.doesNotMatch(n.say(q), /^(yes|probably yes|no), because/, q);
+    n.say("skip");
+  }
+  n.stop();
+});
+
+test("negative: describing a subject (can/is/has) is not an effect, and the subject matters", () => {
+  const n = start();
+  n.say("birds can fly"); n.say("ice is cold"); n.say("if it rains, then the ground gets wet");
+  for (const q of ["if there are birds will I fly?", "if there is ice will I get cold?", "if it rains will I get wet?"]) {
+    assert.doesNotMatch(n.say(q), /because/, q);
+    n.say("skip");
+  }
+  n.stop();
+});
+
+test("negative: a negated conditional is not a reason to do it", () => {
+  const n = start();
+  assert.equal(n.say("when it is warm you do not need a coat"), "got it: it is warm \u2192 you do not need a coat.");
+  assert.doesNotMatch(n.say("if it is warm should I wear a coat?"), /^(yes|probably yes)\b/);
+  n.stop();
+});
