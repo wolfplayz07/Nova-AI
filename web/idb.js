@@ -9,7 +9,8 @@
     "nova-tiny-brain-v5",
     "nova-tiny-brain-v4",
     "nova-lessons-v4",
-    "nova-read-v4"
+    "nova-read-v4",
+    "nova-rules-v1"
   ];
 
   function openDb() {

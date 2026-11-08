@@ -227,6 +227,7 @@
      "should I bring an umbrella" (condition = the creator's line just before, when it is a statement) */
   function parseQuestion(text, prev) {
     var t = clean(text).replace(/[?.!]+$/, "").replace(/^(?:ok|okay|hey|so|nova)\b[ ,]*/, "").trim(), m, cond = "", main = t, ifq = false, kind, target, verb;
+    if (/\d/.test(text) || /\bhow (many|much|long|far|old)\b/.test(t)) return null; /* word problems stay with math */
     m = t.match(/^(?:if|when|whenever)\s+(.+?),?\s+((?:should|do|does|will|would|can|must)\s+.+)$/);
     if (m && m[1].indexOf(",") === -1 || (m = m || t.match(/^(?:if|when|whenever)\s+([^,]+),\s*((?:should|do|does|will|would|can|is|are|must)\s+.+)$/))) { cond = m[1]; main = m[2]; ifq = true; }
     else if ((m = t.match(/^((?:should|do|does|will|would|can|is|are|must)\b.+?)\s+(?:if|when|whenever)\s+(.+)$/))) { main = m[1]; cond = m[2]; ifq = true; }
@@ -288,6 +289,8 @@
     if (!e) {
       m = t.match(/^(?:it|that|they|this|he|she)\s+(.+)$/);
       rest = m ? m[1] : t;
+      /* only an answer-shaped line: "it ...", "you/people/things ...", or a bare verb phrase ("makes you wet") */
+      if (!m && !/^(you|we|people|things|everything|everyone|nothing)\b/.test(t) && !new RegExp("^(?:(?:" + QUALS + ")\\s+)?(?:(?:does not|doesn't|do not|don't|never)\\s+)?(?:" + RELS + ")\\s").test(t)) { clearAsk(); return null; }
       vm = rest.match(new RegExp("^(?:(" + QUALS + ")\\s+)?(?:(does not|doesn't|do not|don't|never)\\s+)?(" + RELS + ")\\s+(.+)$"));
       if (vm) e = edge(anchor, normRel(vm[3]), vm[4], !!vm[2] || vm[1] === "never", vm[1] || "", shown + " " + rest, false);
       else if (toks(rest).length) e = edge(anchor, "then", rest, hasNeg(rest), "", (o.side === "cond" ? "when " + whenPhrase(o.q.cond) : shown) + ", " + rest, true);
@@ -331,6 +334,7 @@
     var low = clean(text).replace(/[?.!]+$/, ""), o = readAsk(), r, q, e;
     if (o) { r = answerAsk(text, o); if (r) return r; }
     if (/^forget (?:that|the last|last) rule$/.test(low)) return forgetRule();
+    if (CMD.test(low) || /^when i say\b/.test(low)) return null; /* owner commands and lessons keep their own flows */
     r = aboutList(text);
     if (r) return r;
     if (blockedByPending()) return null;
@@ -356,7 +360,11 @@
     function wrapped(text) {
       var prev = arguments.length > 1 ? arguments[1] : null, out = null;
       try { out = handle(text, prev); } catch (e) { out = null; if (global.__rulesDebug) throw e; }
-      if (out) return out;
+      if (out) {
+        /* the new-word index still sees lines answered here (it notes after the inner reply) */
+        try { if (global.NovaNewWords && global.NovaNewWords.note && !/^forget /.test(clean(text))) global.NovaNewWords.note(text); } catch (e2) {}
+        return out;
+      }
       return orig.apply(this, arguments);
     }
     for (p in orig) if (Object.prototype.hasOwnProperty.call(orig, p)) wrapped[p] = orig[p];
