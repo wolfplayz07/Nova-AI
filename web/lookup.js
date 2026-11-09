@@ -592,6 +592,8 @@
   }
 
   function handleTeach(text, lastUser) {
+    var clar = clarifyAnswer(text);
+    if (clar) return clar;
     var guessFix = finishGuess(text, lastUser);
     if (guessFix) return guessFix;
     var pendingDone = finishPending(text);
@@ -634,6 +636,8 @@
   }
 
   function ruleThenBrain(origTalk, text) {
+    var clar = clarifyAnswer(text);
+    if (clar) return clar;
     var pendingDone = finishPending(text);
     if (pendingDone) return pendingDone;
     /* v55: "ok nova can a dog talk?" -> "can a dog talk?" so fillers never hide a yes/no question.
@@ -652,12 +656,173 @@
       return "i do not know " + term + ". what do you mean by it?";
     }
     if (isYesNoQuestion(text)) {
+      /* v62: before "yes or no?", ask about a word Nova does not know or cannot tell apart. */
+      var ask = clarifyStart(text);
+      if (ask) return ask;
       setPending({ question: text, term: null, kind: "yn" });
       return "yes or no?";
     }
     /* Lookup already missed. Same generate-or-IDK path for questions and other lines.
        Do not call origTalk: its lesson match is looser than wh-substring rules. */
     return generateOrUnknown(text);
+  }
+
+  /* v62: words in a yes/no question. "Do phones call?" -> phone (noun), call (verb). Each content
+     word is looked up in taught lessons first, then the dictionary. Unknown -> "what is a phone?" /
+     "what does call mean?"; several meanings with no clear winner from how the question uses the
+     word (v59 usage picker, POS from the question's shape) -> "which call? 1) ... 2) ...".
+     The creator's next line is saved as that word's meaning (v60 add-to-list) or picks a number.
+     At most 2 words per question, then "yes or no?" as before. Skip / nevermind cancels. */
+  var CLARIFY = "nova-clarify-v1", CLARIFY_MAX = 2, CLARIFY_OPTS = 6;
+  var DO_AUX = /^(do|does|did|can|could|will|would|should|may|might)$/;
+  function readClarify() {
+    var c;
+    try { c = JSON.parse(localStorage.getItem(CLARIFY) || "null"); } catch (e) { c = null; }
+    if (!c || !c.question || Date.now() - (c.at || 0) > 10 * 60 * 1000) return null;
+    return c;
+  }
+  function writeClarify(c) { try { localStorage.setItem(CLARIFY, JSON.stringify(c)); } catch (e) {} }
+  function clearClarify() { try { localStorage.removeItem(CLARIFY); } catch (e) {} }
+
+  /* [{ w: token, pos: "n"|"v"|"a" }] plus the question rewritten as a statement for the usage picker. */
+  function questionWords(text) {
+    var D = global.NovaDict, q = stripFillers(text).replace(/[?.!,]+/g, " ").replace(/\s+/g, " ").trim();
+    var t = q.split(" "), aux = t.shift(), out = [], subj = -1, i, w, pos, line;
+    if (!D || !D.contentWords || !aux) return null;
+    for (i = 0; i < t.length; i++) {
+      w = t[i].replace(/'s$/, "").replace(/'/g, "");
+      if (!/^[a-z][a-z-]*$/.test(w) || !D.contentWords(w).length) continue;
+      if (subj < 0) { subj = i; pos = "n"; }
+      else if (DO_AUX.test(aux) && out.length === 1) pos = "v";
+      else pos = /^(is|are|am|was|were)$/.test(aux) ? "a" : "n";
+      out.push({ w: w, pos: pos });
+    }
+    if (subj < 0) return null;
+    line = t.slice(0, subj + 1).concat(/^(do|does|did)$/.test(aux) ? [] : [aux], t.slice(subj + 1)).join(" ");
+    return { words: out, line: line };
+  }
+
+  function taughtWord(w, base) {
+    var S = global.NovaSenses, f = readFacts(), t = S && S.read ? S.read() : {};
+    return [w, base].some(function (k) {
+      return k && ((Array.isArray(t[k]) && t[k].length) || spokenMeaning(k) || (f[k] && typeof f[k] === "string"));
+    });
+  }
+
+  /* null = known; else { word, kind: "unknown"|"which", pos, options } */
+  function wordIssue(item, line, skip) {
+    var D = global.NovaDict, S = global.NovaSenses, w = item.w, e, base, list, keep, r, top;
+    e = D.entry(w);
+    base = e ? e.word : (w.length > 3 && /s$/.test(w) && !/ss$/.test(w) ? w.slice(0, -1) : w);
+    if (skip.indexOf(base) !== -1 || skip.indexOf(w) !== -1) return null;
+    if (taughtWord(w, base)) return null;
+    if (!e) return D.ready && D.ready(w) ? { word: base, kind: "unknown", pos: item.pos } : null;
+    if (!S || !S.allSenses || !S.usageScores) return null;
+    list = S.allSenses(e.word, true);
+    keep = list.filter(function (s) {
+      var p = s.pos === "s" ? "a" : s.pos;
+      return item.pos === "a" ? (p === "a" || p === "n") : p === item.pos;
+    });
+    if (keep.length) list = keep;
+    if (list.length < 2) return null;
+    r = S.usageScores(list, line, w);
+    /* the most common meaning for this part of speech (WordNet lists it first) is the default:
+       "can a dog talk" is not asked "which dog?". Nova asks only when the question pulls toward
+       other meanings by a clear margin (or the default does not fit the way the word is used). */
+    var exact = list.filter(function (s) { return (s.pos === "s" ? "a" : s.pos) === item.pos; });
+    var first = Math.min.apply(null, (exact.length ? exact : list).map(function (s) { return s.source === "dict" ? s.idx : 1e9; }));
+    var def = r.ranked.filter(function (x) { return x.s.source === "dict" && x.s.idx === first; })[0];
+    top = r.ranked[0].sc;
+    if (r.clue && top - r.ranked[1].sc >= 1) return null; /* a clear winner from how it is used */
+    if (!def || def.sc >= top - 1) return null;
+    var opts = r.ranked.filter(function (x) { return top - x.sc < 1; });
+    if (opts.indexOf(def) === -1) opts.push(def);
+    if (opts.length < 2) return null;
+    return { word: e.word, kind: "which", pos: item.pos,
+      options: opts.slice(0, CLARIFY_OPTS).map(function (x) { return shortGloss(x.s.gloss); }) };
+  }
+
+  function shortGloss(g) {
+    var t = String(g || "").replace(/\s+/g, " ").trim();
+    if (t.length <= 70) return t;
+    t = t.slice(0, 70).replace(/\s+\S*$/, "").replace(/[\s,;:(]+$/, "");
+    return t.replace(/\s+(?:that|which|to|of|and|or|the|a|an|for|with|by|in|as)$/, "") + "...";
+  }
+
+  function nextIssue(question, skip) {
+    var qw = questionWords(question), i, iss;
+    if (!qw) return null;
+    for (i = 0; i < qw.words.length; i++) {
+      try { iss = wordIssue(qw.words[i], qw.line, skip); } catch (e) { iss = null; }
+      if (iss) return iss;
+    }
+    return null;
+  }
+
+  function askIssue(iss) {
+    if (iss.kind === "which") {
+      return "which " + iss.word + "? " + iss.options.map(function (o, k) { return (k + 1) + ") " + o; }).join(" ");
+    }
+    if (iss.pos === "n") return "what is " + (/^[aeiou]/.test(iss.word) ? "an " : "a ") + iss.word + "?";
+    return "what does " + iss.word + " mean?";
+  }
+
+  function clarifyStart(question) {
+    if (!global.NovaDict || !global.NovaDict.entry) return null;
+    var iss = nextIssue(question, []);
+    if (!iss) return null;
+    try { if (global.NovaDict.clearOffer) global.NovaDict.clearOffer(); } catch (e) {}
+    clearPending();
+    writeClarify({ question: sanitize(question), asked: [], current: iss, at: Date.now() });
+    return askIssue(iss);
+  }
+
+  /* The line after "what is a phone?" / "which call?". null = not an answer (normal flow runs). */
+  function clarifyAnswer(text) {
+    var c = readClarify(), cur, q = sanitize(text).replace(/[.!?]+$/, "").trim(), k = -1, meaning, dm, saved, iss, hit;
+    if (!c) { clearClarify(); return null; }
+    cur = c.current;
+    if (cancelPending(text)) { clearClarify(); return "ok. skipped."; }
+    if (cur.kind === "which") {
+      var nq = q.replace(/^(?:the |number )/, "").replace(/ one$/, "");
+      var NUMW = ["one", "two", "three", "four", "five", "six"], ORDW = ["first", "second", "third", "fourth", "fifth", "sixth"];
+      if (/^\d{1,2}$/.test(nq)) k = parseInt(nq, 10) - 1;
+      else if (NUMW.indexOf(nq) >= 0) k = NUMW.indexOf(nq);
+      else if (ORDW.indexOf(nq) >= 0) k = ORDW.indexOf(nq);
+      if (k >= cur.options.length) k = -1;
+    }
+    if (k < 0) {
+      /* "it means X", "that is X", "call means X", "a phone is X" answer the open word */
+      var own = sanitize(text).replace(/[.!]+$/, "").match(/^(?:it|that|(?:a |an |the )?([a-z][a-z-]*))\s+(?:is|means|is like|stands for|=)\s+(.+)$/);
+      if (own && (!own[1] || own[1].replace(/s$/, "") === cur.word.replace(/s$/, ""))) { text = own[2]; q = sanitize(text); }
+      else if (isNewQuestion(text) || isExplicitTeachPhrase(text) || /^(yes|no|y|n|yeah|nope|nah|ok|okay|idk|i don't know|i dont know)$/.test(q)) {
+        clearClarify();
+        return null;
+      }
+      if (/^(?:yes|no|y|n|ok|okay)$/.test(q)) { clearClarify(); return null; }
+      meaning = extractCorrectionAnswer(text).replace(/[.!]+$/, "");
+      var itm = sanitize(meaning).match(/^(?:it|that)\s+(?:is|means)\s+(.+)$/);
+      if (itm) meaning = itm[1];
+      dm = declarative(meaning);
+      if (dm && stripArticle(dm.term).replace(/s$/, "") === cur.word.replace(/s$/, "")) meaning = dm.meaning;
+      if (!sanitize(meaning)) { clearClarify(); return null; }
+      saved = saveUser(cur.word, meaning, text); /* v60 style: stacks with any other meaning */
+      if (!saved) { clearClarify(); return null; }
+    } else {
+      saved = true; /* picked a dictionary meaning: used for this question, nothing is taught */
+    }
+    c.asked.push(cur.word);
+    var note = k >= 0 ? "ok, " + cur.word + " = " + cur.options[k] + "." : "saved your meaning of " + cur.word + ".";
+    iss = c.asked.length < CLARIFY_MAX ? nextIssue(c.question, c.asked) : null;
+    if (iss) {
+      c.current = iss; c.at = Date.now(); writeClarify(c);
+      return note + " " + askIssue(iss);
+    }
+    clearClarify();
+    hit = lookup(c.question);
+    if (hit) return note + " " + hit;
+    setPending({ question: c.question, term: null, kind: "yn" });
+    return note + " " + c.question.replace(/[?.!\s]+$/, "") + "? yes or no?";
   }
 
   /* v57: a word with more than one meaning picks one by wording + recent chat (senses.js). */
@@ -740,6 +905,8 @@
     spokenMeaning: spokenMeaning,
     clearPending: clearPending,
     lessons: lessonsFromStore,
+    clarifyAnswer: clarifyAnswer,
+    readClarify: readClarify,
     lastGuess: function () { return lastGuess ? lastGuess.question : null; }
   };
 
