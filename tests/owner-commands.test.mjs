@@ -52,9 +52,9 @@ test("corrections after IDK and bare yes/no teach", () => {
   assert.equal(n.say("who painted my fence"), "i do not know.");
   assert.equal(n.say("say bob did"), "got it. next time i'll say: bob did");
   assert.equal(n.say("who painted my fence"), "bob did");
-  assert.equal(n.say("can you swim"), "yes or no?");
+  assert.equal(n.say("can a fish swim"), "yes or no?");
   assert.equal(n.say("no"), "got it. next time i'll say: no");
-  assert.equal(n.say("can you swim"), "no");
+  assert.equal(n.say("can a fish swim"), "no");
   n.stop();
 });
 

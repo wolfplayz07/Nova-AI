@@ -52,8 +52,8 @@ test("no remembers the pair and never asks it again; honest i do not know after"
 test("never replaces yes or no?, the what-is prompt, or a lesson hit; any other line carries on", () => {
   const n = start();
   n.say("learn on your own"); n.say("don't ask me words");
-  n.say("when i say can you do math say yes i can");
-  assert.equal(n.say("can you do some math"), "yes or no?");
+  n.say("when i say can dogs do math say yes they can");
+  assert.equal(n.say("can dogs do some math"), "yes or no?");
   n.say("skip");
   assert.match(n.say("what is a zorp"), /what do you mean by it\?$|^i do not know/);
   n.say("skip");

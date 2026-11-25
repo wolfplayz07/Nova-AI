@@ -22,7 +22,7 @@ const facts = (n) => JSON.parse(n.localStorage.getItem("nova-facts-v1") || "{}")
 
 test("off by default: replies are exactly the same as without self-learn.js", () => {
   const lines = ["hello", "my reactor is hot", "the reactor hums", "how are you", "what is a river", "no",
-    "can you count", "yes", "what is a zorp", "skip", "what is 2 plus 2", "reactor reactor"];
+    "can dogs bark", "yes", "what is a zorp", "skip", "what is 2 plus 2", "reactor reactor"];
   const a = boot({ files: BASE, globals: { XMLHttpRequest: XHR } }), b = startSelf();
   for (const l of lines) assert.equal(b.say(l), a.say(l), l);
   assert.equal(b.say("self-learning status"), "self-learning off.");
@@ -65,7 +65,7 @@ test("no ask during i do not know, yes or no?, what-is, math, or commands", () =
   twice(n);
   assert.equal(n.say("why is the sky green"), "i do not know.");
   n.say("skip");
-  assert.equal(n.say("can you fly"), "yes or no?");
+  assert.equal(n.say("can birds fly"), "yes or no?");
   n.say("skip");
   assert.equal(n.say("what is 2 plus 2"), "4.");
   assert.doesNotMatch(n.say("brain status"), /by the way/);

@@ -907,6 +907,7 @@
     lessons: lessonsFromStore,
     clarifyAnswer: clarifyAnswer,
     readClarify: readClarify,
+    clearClarify: clearClarify,
     lastGuess: function () { return lastGuess ? lastGuess.question : null; }
   };
 

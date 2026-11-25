@@ -76,7 +76,7 @@ test("corrected guess is tracked by v51 and stays blocked", () => {
 test("yes or no and what-is flows are unchanged", () => {
   const n = boot();
   stub(n, () => "the cat sat on the mat");
-  assert.equal(n.say("can you swim"), "yes or no?");
+  assert.equal(n.say("can a fish swim"), "yes or no?");
   assert.equal(n.say("no"), "got it. next time i'll say: no");
   assert.equal(n.say("what is a zorp"), "i do not know zorp. what do you mean by it?");
   assert.equal(n.say("skip"), "ok. skipped.");

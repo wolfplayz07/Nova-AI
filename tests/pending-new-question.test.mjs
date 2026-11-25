@@ -19,8 +19,8 @@ test("QA repro: a question with a comma clause is not saved as the meaning", () 
 
 test("new questions after 'yes or no?' and 'i do not know' replace the slot", () => {
   const n = boot();
-  for (const q of ["why is the sky blue", "why do we need sleep", "so should i go", "ok can you swim", "is it raining?", "explain this?"]) {
-    n.say("can you count");
+  for (const q of ["why is the sky blue", "why do we need sleep", "so should i go", "ok do dogs swim?", "is it raining?", "explain this?"]) {
+    n.say("can dogs bark");
     const r = n.say(q);
     assert.ok(!/^got it|^lesson saved/.test(r), q + " => " + r);
     n.say("skip");
@@ -43,9 +43,9 @@ test("approved behavior kept: plain lines teach, yes/no answers, skip cancels", 
   assert.equal(n.say("what is a blorp"), "i do not know blorp. what do you mean by it?");
   assert.equal(n.say("a made up word"), "got it. next time i'll say: a made up word");
   assert.equal(n.say("what is a blorp"), "a made up word");
-  assert.equal(n.say("can you count"), "yes or no?");
+  assert.equal(n.say("can dogs bark"), "yes or no?");
   assert.equal(n.say("yes"), "got it. next time i'll say: yes");
-  assert.equal(n.say("can you fly"), "yes or no?");
+  assert.equal(n.say("can birds fly"), "yes or no?");
   assert.match(n.say("no, i only run here"), /^got it/);
   assert.equal(n.say("why is grass green"), "i do not know.");
   assert.equal(n.say("skip"), "ok. skipped.");

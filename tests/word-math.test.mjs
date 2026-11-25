@@ -64,9 +64,9 @@ test("non-math lines fall through to the existing behavior", () => {
 test("yes/no and what-is teach loops are untouched", () => {
   const n = boot();
   assert.equal(n.say("Jon has 4 cookies and Mary took 2, how many are left?"), "Jon has 2 cookies left.");
-  assert.equal(n.say("can you count"), "yes or no?");
+  assert.equal(n.say("can dogs bark"), "yes or no?");
   assert.equal(n.say("yes"), "got it. next time i'll say: yes");
-  assert.equal(n.say("can you count"), "yes");
+  assert.equal(n.say("can dogs bark"), "yes");
   assert.equal(n.say("does jon have 2 cookies"), "yes or no?");
   n.say("skip");
   assert.equal(n.say("what is a cookie"), "i do not know cookie. what do you mean by it?");

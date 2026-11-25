@@ -78,7 +78,7 @@ test("bridge ask(): 'should i ...' is not answered with 'yes or no?' (v48)", () 
   const n = bootPage();
   const ask = vm.runInContext(ASK_SRC, n.ctx);
   assert.equal(ask("should i learn python or javascript first"), "i do not know.");
-  assert.equal(ask("can you count"), "yes or no?");
+  assert.equal(ask("can dogs bark"), "yes or no?");
   done(n);
 });
 

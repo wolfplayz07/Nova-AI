@@ -77,10 +77,10 @@ test("gibberish, IDK, and learn-commands from generate stay honest IDK and still
 test("yes or no questions do not call generate", () => {
   const n = boot();
   const spy = stub(n, () => "the cat sat on the mat");
-  assert.equal(n.say("can you swim"), "yes or no?");
+  assert.equal(n.say("can a fish swim"), "yes or no?");
   assert.equal(spy.calls(), 0);
   assert.equal(n.say("no"), "got it. next time i'll say: no");
-  assert.equal(n.say("can you swim"), "no");
+  assert.equal(n.say("can a fish swim"), "no");
   assert.equal(spy.calls(), 0);
   n.stop();
 });
