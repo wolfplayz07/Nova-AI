@@ -132,3 +132,63 @@ test("a leftover line after which one? is not i do not know; skip still cancels"
   assert.equal(n.say("skip"), "ok. not saved.");
   n.stop();
 });
+
+test("restaurant bill and dental bill ask which bill, and a pick saves the phrase", () => {
+  const n = start();
+  const out = n.say("what is a restaurant bill?");
+  assert.match(out, /^which bill\? 1\) .* 2\) .* 3\) .*\. more\?$/, out);
+  assert.doesNotMatch(out, /is probably|i do not know/);
+  const saved = n.say("2");
+  assert.match(saved, /^saved\. restaurant bill means an itemized statement of money owed/);
+  assert.match(String(facts(n)["restaurant bill"]?.user || ""), /money owed/);
+  assert.doesNotMatch(n.say("what is a restaurant bill"), /which bill\?|is probably/);
+  n.stop();
+
+  const d = start();
+  const dental = d.say("what is a dental bill?");
+  assert.match(dental, /^which bill\? 1\) .* 2\) .* 3\) .*\. more\?$/, dental);
+  assert.doesNotMatch(dental, /is probably|i do not know/);
+  const more = d.say("more");
+  assert.match(more, /^which bill\? 1\) /);
+  assert.match(more, /4\) /);
+  d.stop();
+});
+
+test("duck bill asks which and does not use a verb gloss of duck", () => {
+  const n = start();
+  const out = n.say("what is a duck bill?");
+  assert.match(out, /^which bill\? 1\) .* 2\) .* 3\) .*\. more\?$/, out);
+  assert.doesNotMatch(out, /is probably|i do not know/);
+  assert.doesNotMatch(out, /move \(the head or body\)|quickly downwards|submerge or plunge|dip into a liquid|avoid or try to avoid/);
+  n.stop();
+});
+
+test("articles use an before vowel sounds", () => {
+  const n = start();
+  const oak = n.say("what is an oak bark?");
+  assert.match(oak, /^an oak bark is probably /);
+  assert.match(oak, / for an oak \(/);
+  assert.doesNotMatch(oak, /\ba oak\b|^a oak/);
+  n.stop();
+
+  const u = start();
+  const util = u.say("what is a utility bill?");
+  assert.match(util, /^a utility bill is probably /);
+  assert.match(util, / for a utility \(/);
+  assert.doesNotMatch(util, /\ban utility\b/);
+  u.stop();
+
+  const h = start();
+  const hour = h.say("what is an hour clock?");
+  assert.match(hour, /^an hour clock is probably /);
+  assert.match(hour, / for an hour \(/);
+  assert.doesNotMatch(hour, /\ba hour\b/);
+  h.stop();
+
+  const v = start();
+  const uni = v.say("what is a university campus?");
+  assert.match(uni, /^a university campus is probably /);
+  assert.match(uni, / for a university \(/);
+  assert.doesNotMatch(uni, /\ban university\b/);
+  v.stop();
+});

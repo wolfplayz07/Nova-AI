@@ -158,7 +158,7 @@
     msgs = msgs.slice(-7).filter(function (m) { return !userOnly || (m && m.role === "user"); })
       .map(function (m) { return String((m && m.content) || ""); });
     if (msgs.length && clean(msgs[msgs.length - 1]) === last) msgs.pop();
-    msgs.forEach(function (l) { if (/^(which one\?|dictionary says)/.test(clean(l))) return; words(l).forEach(function (x) { ctx[x] = 1; }); });
+    msgs.forEach(function (l) { if (/^(which (?:one|[a-z'-]+)\?|dictionary says)/.test(clean(l))) return; words(l).forEach(function (x) { ctx[x] = 1; }); });
     delete ctx[w]; delete ctx[w.replace(/s$/, "")];
     return ctx;
   }
@@ -370,10 +370,12 @@
   function listOpts(opts, from, to) {
     return opts.slice(from, to).map(function (s, k) { return (from + k + 1) + ") " + short(s); }).join(" ");
   }
-  function askAll(w, opts, shown) {
+  function askAll(w, opts, shown, meta) {
     shown = Math.min(shown == null ? SHOW : shown, opts.length);
-    try { localStorage.setItem(CHOOSE, JSON.stringify({ word: w, options: opts, shown: shown, at: Date.now() })); } catch (e) {}
-    var text = "which one? " + listOpts(opts, 0, shown);
+    meta = meta || {};
+    var which = meta.which || "one";
+    try { localStorage.setItem(CHOOSE, JSON.stringify({ word: w, options: opts, shown: shown, which: which, compound: !!meta.compound, at: Date.now() })); } catch (e) {}
+    var text = "which " + which + "? " + listOpts(opts, 0, shown);
     if (shown < opts.length) text += ". more?";
     return text;
   }
@@ -405,7 +407,7 @@
     if (k >= 0 && k < max) return [k];
     return null;
   }
-  function saveChosen(w, opts, indexes) {
+  function saveChosen(w, opts, indexes, compound) {
     var L = global.NovaLookup, i, s, glosses = [], ok = 0;
     for (i = 0; i < indexes.length; i++) {
       s = opts[indexes[i]];
@@ -417,6 +419,10 @@
       } catch (e) {}
     }
     if (!glosses.length) return say(w, opts[0]);
+    if (compound || / /.test(w)) {
+      if (glosses.length === 1) return (ok ? "saved. " : "") + w + " means " + glosses[0] + ".";
+      return (ok ? "saved. " : "") + w + " can mean: " + glosses.map(function (g, k) { return (k + 1) + ") " + g; }).join(" ") + ".";
+    }
     if (glosses.length === 1) return (ok ? "saved. " : "") + (opts[indexes[0]].source === "taught" ? glosses[0] : say(w, opts[indexes[0]]));
     return (ok ? "saved. " : "") + w + " can mean: " + glosses.map(function (g, k) { return (k + 1) + ") " + g; }).join(" ") + ".";
   }
@@ -483,13 +489,14 @@
     if (!c || !c.options) return null;
     if (Date.now() - (c.at || 0) > TTL) { localStorage.removeItem(CHOOSE); return null; }
     if (/^(skip|never mind|nevermind|cancel|neither|forget it)$/.test(q)) { localStorage.removeItem(CHOOSE); return "ok."; }
+    var which = c.which || "one";
     if (isMore(q)) {
       if ((c.shown || 0) < c.options.length) {
         c.shown = c.options.length; c.at = Date.now();
         try { localStorage.setItem(CHOOSE, JSON.stringify(c)); } catch (e2) {}
-        return "which one? " + listOpts(c.options, 0, c.options.length);
+        return "which " + which + "? " + listOpts(c.options, 0, c.options.length);
       }
-      return "those are the only meanings i have. " + "which one? say a number or both.";
+      return "those are the only meanings i have. " + "which " + which + "? say a number or both.";
     }
     picks = parsePicks(q, c.options.length);
     if (!picks) {
@@ -503,10 +510,10 @@
     }
     if (picks && picks.length) {
       localStorage.removeItem(CHOOSE);
-      return saveChosen(c.word, c.options, picks);
+      return saveChosen(c.word, c.options, picks, c.compound);
     }
     try { L = global.NovaLookup; if (L && L.isNewQuestion && L.isNewQuestion(text)) { localStorage.removeItem(CHOOSE); return null; } } catch (e3) {}
-    return "which one? say a number, both, or more.";
+    return "which " + which + "? say a number, both, or more.";
   }
 
 
@@ -532,15 +539,44 @@
     });
     return set;
   }
-  function wordBag(term, expandRel) {
+  function hasNounSense(e) {
+    var i;
+    if (!e || !e.senses) return false;
+    for (i = 0; i < e.senses.length; i++) if (e.senses[i][0] === "n") return true;
+    return false;
+  }
+  function wordBag(term, expandRel, nounOnly) {
     var e = dictEntry(term), set = {}, i, s, t;
     words(term).forEach(function (x) { set[x] = 1; });
     if (e) for (i = 0; i < e.senses.length; i++) {
       s = e.senses[i];
+      if (nounOnly && s[0] !== "n") continue;
       t = [s[1]].concat(Array.isArray(s[2]) ? s[2] : [], Array.isArray(s[3]) ? s[3] : []).join(" ");
       words(t).forEach(function (x) { set[x] = 1; });
     }
     return expandRel ? relExpand(set) : set;
+  }
+  function firstGloss(e, nounOnly) {
+    var i, s;
+    if (!e || !e.senses || !e.senses.length) return "";
+    for (i = 0; i < e.senses.length; i++) {
+      s = e.senses[i];
+      if (!nounOnly || s[0] === "n") return String(s[1]).replace(/[.\s]+$/, "");
+    }
+    return String(e.senses[0][1]).replace(/[.\s]+$/, "");
+  }
+  /* "an" before a vowel sound: an oak, an hour; "a" before a consonant sound: a utility, a university. */
+  function article(word) {
+    var w = String(word || "").toLowerCase().replace(/^[^a-z]+/, "").split(/[^a-z'-]+/)[0] || "";
+    if (/^(hour|honest|honor|honour|heir|herb|herbal)s?$/.test(w) || /^(hour|honest|honor|honour|heir|herb|herbal)-/.test(w)) return "an";
+    if (/^(one|once|ones)\b/.test(w) || /^eu/.test(w)) return "a";
+    if (/^u/.test(w)) {
+      if (/^uni|^unique|^use|^usu|^uto|^ura|^uri|^uke|^uvu|^ubiqu/.test(w)) return "a";
+      if (/^u(?:n(?!i)|m|p|g)/.test(w) || /^u[aeiou]/.test(w)) return "an";
+      return "a";
+    }
+    if (/^[aeiou]/.test(w)) return "an";
+    return "a";
   }
   function senseBag(s) {
     var set = {}, t = [s[1] || s.gloss || ""].concat(Array.isArray(s[2]) ? s[2] : (s.ex || []), Array.isArray(s[3]) ? s[3] : (s.syn || [])).join(" ");
@@ -550,18 +586,20 @@
   function scoreHead(modBag, s) {
     var bag = senseBag(s), n = 0, k;
     for (k in bag) if (modBag[k]) n++;
-    if ((s.pos || s[0]) === "n") n += 0.2;
-    return n;
+    return { overlap: n, sc: n + ((s.pos || s[0]) === "n" ? 0.2 : 0) };
   }
   function pickCompound(mod, head) {
-    var e = dictEntry(head), me = dictEntry(mod), list, scored, bag, best, i;
+    var e = dictEntry(head), me = dictEntry(mod), list, scored, bag, best, nouns, clear;
     if (!e || !e.senses.length || !me) return null;
-    bag = wordBag(mod, true);
-    list = e.senses.map(function (s, i) { return { pos: s[0], gloss: String(s[1]).replace(/[.\s]+$/, ""), ex: s[2] || [], syn: s[3] || [], idx: i, word: e.word }; });
-    scored = list.map(function (s) { return { s: s, sc: scoreHead(bag, s) }; }).sort(function (a, b) { return b.sc - a.sc || a.s.idx - b.s.idx; });
+    nouns = hasNounSense(me);
+    bag = wordBag(mod, true, nouns);
+    list = e.senses.map(function (s, i) { return { pos: s[0], gloss: String(s[1]).replace(/[.\s]+$/, ""), ex: s[2] || [], syn: s[3] || [], idx: i, word: e.word, source: "dict" }; });
+    scored = list.map(function (s) { var sc = scoreHead(bag, s); return { s: s, sc: sc.sc, overlap: sc.overlap }; }).sort(function (a, b) { return b.sc - a.sc || a.s.idx - b.s.idx; });
     best = scored[0];
     if (!best) return null;
-    return { head: best.s, modGloss: String(me.senses[0][1]).replace(/[.\s]+$/, ""), score: best.sc, ranked: scored };
+    clear = best.overlap >= 1 && (scored.length < 2 || best.overlap > scored[1].overlap);
+    if (scored.length === 1) clear = true;
+    return { head: best.s, modGloss: firstGloss(me, nouns), score: best.sc, overlap: best.overlap, ranked: scored, clear: clear };
   }
   function writeCompound(o) { try { localStorage.setItem(COMPOUND, JSON.stringify(o)); } catch (e) {} }
   function readCompound() {
@@ -581,9 +619,12 @@
     if (!pick) return null;
     try { if (D() && D().clearOffer) D().clearOffer(); } catch (e1) {}
     try { localStorage.removeItem(CHOOSE); } catch (e2) {}
-    art = /^[aeiou]/.test(phrase) ? "an " : "a ";
+    if (!pick.clear) {
+      return askAll(phrase, pick.ranked.map(function (x) { return x.s; }), SHOW, { which: p.head, compound: true });
+    }
+    art = article(phrase);
     writeCompound({ phrase: phrase, mod: p.mod, head: p.head, gloss: pick.head.gloss, modGloss: pick.modGloss, at: Date.now() });
-    return art + phrase + " is probably " + pick.head.gloss + " for a " + p.mod + " (" + pick.modGloss + "). right?";
+    return art + " " + phrase + " is probably " + pick.head.gloss + " for " + article(p.mod) + " " + p.mod + " (" + pick.modGloss + "). right?";
   }
   function answerCompound(text) {
     var o = readCompound(), q, L;
@@ -600,10 +641,10 @@
     if (/^(no|n|nope|nah|wrong|not quite|no thanks)$/.test(q) || (L && L.taughtYesNo && L.taughtYesNo(q) === "no")) {
       clearCompound();
       try { if (L && L.setPending) L.setPending({ question: "what is a " + o.phrase, term: o.phrase }); } catch (e2) {}
-      return "ok. tell me what a " + o.phrase + " means if you like.";
+      return "ok. tell me what " + article(o.phrase) + " " + o.phrase + " means if you like.";
     }
     try { if (L && L.isNewQuestion && L.isNewQuestion(text)) { clearCompound(); return null; } } catch (e3) {}
-    return "a " + o.phrase + " is probably " + o.gloss + " for a " + o.mod + " (" + o.modGloss + "). right?";
+    return article(o.phrase) + " " + o.phrase + " is probably " + o.gloss + " for " + article(o.mod) + " " + o.mod + " (" + o.modGloss + "). right?";
   }
 
   function wrapReply() {
@@ -627,7 +668,7 @@
     if (!T || typeof T.learnPair !== "function" || T.learnPair._senses) return;
     var orig = T.learnPair, p;
     var g = function (user, nova) {
-      if (/^(which one\? |a .+ is probably |saved\. )/.test(String(nova || "").toLowerCase())) return false;
+      if (/^(which (?:one|[a-z'-]+)\? |an? .+ is probably |saved\. )/.test(String(nova || "").toLowerCase())) return false;
       return orig.apply(this, arguments);
     };
     for (p in orig) if (Object.prototype.hasOwnProperty.call(orig, p)) g[p] = orig[p];
