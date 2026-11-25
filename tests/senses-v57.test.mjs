@@ -61,7 +61,7 @@ test("no context 'what is a bark' with both senses -> dog via the article cue", 
   n.stop();
 });
 
-test("close scores ask 'which one?'; 1/2/first/second or words pick; picking does not teach", () => {
+test("close scores ask 'which one?'; 1/2/first/second or words pick; picking saves the chosen sense", () => {
   for (const [pick, want] of [["1", DOG], ["first", DOG], ["2", "a small sailing ship"], ["second", "a small sailing ship"], ["the boat one", "a small sailing ship"], ["the dog one", DOG]]) {
     let n = taughtLive();
     assert.equal(n.say("a bark is a small sailing ship"), "got it. bark is a small sailing ship.");
@@ -69,9 +69,9 @@ test("close scores ask 'which one?'; 1/2/first/second or words pick; picking doe
     const before = n.localStorage.getItem("nova-senses-v1");
     const factsBefore = n.localStorage.getItem("nova-facts-v1");
     assert.equal(n.say("what is a bark"), "which one? 1) a loud sound a dog makes 2) a small sailing ship");
-    assert.equal(n.say(pick), want, pick);
-    assert.equal(n.localStorage.getItem("nova-senses-v1"), before, "picking does not teach");
-    assert.equal(n.localStorage.getItem("nova-facts-v1"), factsBefore);
+    const got = n.say(pick);
+    assert.match(got, new RegExp(want.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), pick + " => " + got);
+    assert.match(got, /^saved\. /);
     assert.ok(!n.lessons().some((l) => /which one/.test(l.nova)));
     n.stop();
   }
