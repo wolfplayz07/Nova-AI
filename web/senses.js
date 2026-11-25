@@ -30,7 +30,7 @@
   var MIGRATED = "nova-senses-migrated-v1";
   var LAST = "nova-sense-last-v1";
   var TTL = 10 * 60 * 1000;
-  var MARGIN = 1;
+  var MARGIN = 1, SHOW = 3, COMPOUND = "nova-compound-ask-v1"; /* v65: 3 senses then more?; compound noun asks */
   var POS = { n: "noun", v: "verb", a: "adjective", r: "adverb" };
 
   function clean(s) {
@@ -142,6 +142,8 @@
     var p = m[1], x;
     if ((x = p.match(/^(?:a |an |the |some )?(?:piece|pieces|bit|bits|chunk|strip|layer) of (?:the )?([a-z'-]+)$/))) return { word: x[1], cue: "mass", extra: [] };
     if ((x = p.match(/^the ([a-z'-]+) (?:of|on|from) (?:a |an |the )?(.+)$/))) return { word: x[1], cue: "mass", extra: words(x[2]) };
+    /* v65: "what is a hospital bill?" — two-word noun phrase, handled as a compound later. */
+    if ((x = p.match(/^(?:a|an) ([a-z'-]+) ([a-z'-]+)$/))) return { kind: "compound", mod: x[1], head: x[2], phrase: x[1] + " " + x[2], word: x[2], cue: "count", extra: [x[1]] };
     if ((x = p.match(/^(?:a|an) ([a-z'-]+)$/))) return { word: x[1], cue: "count", extra: [] };
     if ((x = p.match(/^([a-z'-]+)$/))) return { word: x[1], cue: "bare", extra: [] };
     /* "tree bark": only after what is / define, when the two words are not a known phrase themselves */
@@ -156,7 +158,7 @@
     msgs = msgs.slice(-7).filter(function (m) { return !userOnly || (m && m.role === "user"); })
       .map(function (m) { return String((m && m.content) || ""); });
     if (msgs.length && clean(msgs[msgs.length - 1]) === last) msgs.pop();
-    msgs.forEach(function (l) { if (/^(which one\?|dictionary says)/.test(clean(l))) return; words(l).forEach(function (x) { ctx[x] = 1; }); });
+    msgs.forEach(function (l) { if (/^(which (?:one|[a-z'-]+)\?|dictionary says)/.test(clean(l))) return; words(l).forEach(function (x) { ctx[x] = 1; }); });
     delete ctx[w]; delete ctx[w.replace(/s$/, "")];
     return ctx;
   }
@@ -315,12 +317,48 @@
     if (m && findWord(toks(m[2]), m[1])) return { word: m[1], cue: "usage", line: m[2].replace(/^'|'$/g, ""), extra: [] };
     return null;
   }
+  /* v65: verb-meaning questions. "What does it mean when you bill someone", "what is it to bill",
+     "what does it mean to bill", and bare "what does bill mean" prefer verb senses. */
+  function parseVerb(text) {
+    var q = clean(text).replace(/^(?:ok|okay|hey|nova)\b\s*/g, ""), m, rest, w, t;
+    m = q.match(/^(?:what does it mean|whats it mean) (?:when you |when someone |when a person |when one |if you |if someone )(.+)$/);
+    if (m) {
+      rest = m[1].replace(/^(to )/, "");
+      w = rest.split(" ")[0].replace(/s$/, "");
+      if (w) return { word: w, cue: "usage", line: "you " + rest, extra: [], verbFirst: true };
+    }
+    m = q.match(/^(?:what is it to|whats it to|what does it mean to|whats it mean to) ([a-z'-]+)\b(.*)$/);
+    if (m) return { word: m[1], cue: "usage", line: "to " + m[1] + (m[2] || ""), extra: [], verbFirst: true };
+    m = q.match(/^(?:what does|whats) ([a-z'-]+) mean$/);
+    if (m && !/^(it|that|this)$/.test(m[1])) return { word: m[1], cue: "verb", line: "", extra: [], verbFirst: true };
+    return null;
+  }
 
-  function usageAnswer(w, line, extra) {
-    var list = allSenses(w, true), hasTaught = list.some(function (s) { return s.source === "taught"; }), r, top;
+  function usageAnswer(w, line, extra, verbFirst) {
+    var list = allSenses(w, true), hasTaught = list.some(function (s) { return s.source === "taught"; }), r, top, verbs;
+    if (verbFirst && !line) {
+      verbs = list.filter(function (s) { return s.pos === "v"; });
+      if (verbs.length === 1 && verbs[0].source === "dict" && !hasTaught && D() && D().offer) {
+        try { if (D() && D().clearOffer) D().clearOffer(); } catch (eV) {}
+        return remember(w, D().offer(w, null, verbs[0].idx));
+      }
+      if (verbs.length > 1 && !hasTaught && D() && D().offer) {
+        try { if (D() && D().clearOffer) D().clearOffer(); } catch (eV2) {}
+        return remember(w, D().offer(w, null, verbs.map(function (s) { return s.idx; }).filter(function (i) { return i != null; })));
+      }
+      if (verbs.length) { try { if (D() && D().clearOffer) D().clearOffer(); } catch (eV3) {} return remember(w, say(w, verbs[0])); }
+    }
     if (list.length < 2) return null;
     r = usageScores(list, line, w, extra);
     try { if (D() && D().clearOffer) D().clearOffer(); } catch (e0) {}
+    if (verbFirst) {
+      verbs = r.ranked.filter(function (x) { return x.s.pos === "v"; });
+      if (verbs.length && (r.frame && r.frame.pos === "v" || verbs[0].sc >= r.ranked[0].sc - 0.5)) {
+        top = verbs[0].s;
+        if (top.source === "dict" && !hasTaught && D() && D().offer) return remember(w, D().offer(w, null, top.idx));
+        return remember(w, say(w, top));
+      }
+    }
     if (!r.clue) { /* the sentence gives no clue: ask, with every meaning */
       if (!hasTaught && D() && D().offer) return remember(w, D().offer(w, null, list.map(function (s) { return s.idx; })));
       return remember(w, askAll(w, list));
@@ -329,26 +367,85 @@
     if (top.source === "dict" && !hasTaught && D() && D().offer) return remember(w, D().offer(w, null, top.idx));
     return remember(w, say(w, top));
   }
-  function askAll(w, opts) {
-    try { localStorage.setItem(CHOOSE, JSON.stringify({ word: w, options: opts, at: Date.now() })); } catch (e) {}
-    return "which one? " + opts.map(function (s, k) { return (k + 1) + ") " + short(s); }).join(" ");
+  function listOpts(opts, from, to) {
+    return opts.slice(from, to).map(function (s, k) { return (from + k + 1) + ") " + short(s); }).join(" ");
+  }
+  function askAll(w, opts, shown, meta) {
+    shown = Math.min(shown == null ? SHOW : shown, opts.length);
+    meta = meta || {};
+    var which = meta.which || "one";
+    try { localStorage.setItem(CHOOSE, JSON.stringify({ word: w, options: opts, shown: shown, which: which, compound: !!meta.compound, at: Date.now() })); } catch (e) {}
+    var text = "which " + which + "? " + listOpts(opts, 0, shown);
+    if (shown < opts.length) text += ". more?";
+    return text;
+  }
+  function isMore(q) { return /^(more|more\?|what else|other meaning|another meaning|next meaning|any other meaning|what else does it mean)$/.test(q); }
+  function parsePicks(q, max) {
+    var s = String(q || "").replace(/[.!?]+$/g, "").trim(), parts, out = [], i, k, seen = {}, NUMW, ORDW, nq;
+    if (/^(both|both of (?:them|those)|the first two)$/.test(s)) return max >= 2 ? [0, 1] : [0];
+    if (/^(all|all of them|every one|every meaning)$/.test(s)) {
+      for (i = 0; i < max; i++) out.push(i);
+      return out;
+    }
+    nq = s.replace(/^(?:the |number )/, "");
+    if (/^\d+(?:\s*(?:,|&|and)\s*\d+)+$/.test(nq) || /^\d+(?:\s+\d+)+$/.test(nq)) {
+      parts = nq.split(/\s*(?:,|&|and)\s*|\s+/);
+      for (i = 0; i < parts.length; i++) {
+        k = parseInt(parts[i], 10) - 1;
+        if (k < 0 || k >= max || seen[k]) continue;
+        seen[k] = 1; out.push(k);
+      }
+      return out.length ? out : null;
+    }
+    NUMW = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+    ORDW = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"];
+    nq = nq.replace(/ one$/, "");
+    if (/^\d{1,2}$/.test(nq)) k = parseInt(nq, 10) - 1;
+    else if (NUMW.indexOf(nq) >= 0) k = NUMW.indexOf(nq);
+    else if (ORDW.indexOf(nq) >= 0) k = ORDW.indexOf(nq);
+    else k = -1;
+    if (k >= 0 && k < max) return [k];
+    return null;
+  }
+  function saveChosen(w, opts, indexes, compound) {
+    var L = global.NovaLookup, i, s, glosses = [], ok = 0;
+    for (i = 0; i < indexes.length; i++) {
+      s = opts[indexes[i]];
+      if (!s) continue;
+      glosses.push(s.gloss);
+      try {
+        if (L && L.saveUser && L.saveUser(w, s.gloss, s.gloss)) ok++;
+        else if (addTaught(w, s.gloss, s.gloss)) ok++;
+      } catch (e) {}
+    }
+    if (!glosses.length) return say(w, opts[0]);
+    if (compound || / /.test(w)) {
+      if (glosses.length === 1) return (ok ? "saved. " : "") + w + " means " + glosses[0] + ".";
+      return (ok ? "saved. " : "") + w + " can mean: " + glosses.map(function (g, k) { return (k + 1) + ") " + g; }).join(" ") + ".";
+    }
+    if (glosses.length === 1) return (ok ? "saved. " : "") + (opts[indexes[0]].source === "taught" ? glosses[0] : say(w, opts[indexes[0]]));
+    return (ok ? "saved. " : "") + w + " can mean: " + glosses.map(function (g, k) { return (k + 1) + ") " + g; }).join(" ") + ".";
   }
 
   /* Answer a what-is question by sense. null = not ours (old flow runs). */
   function answer(text) {
-    var p = parseUsage(text) || parse(text), L = global.NovaLookup, list, ctx, scored, i, extra = {}, ul;
-    if (!p || !p.word) return null;
+    var p = parseUsage(text) || parseVerb(text) || parse(text), L = global.NovaLookup, list, ctx, scored, i, extra = {}, ul;
+    if (!p) return null;
+    if (p.kind === "compound") return compoundAnswer(p);
+    if (!p.word) return null;
     var w = p.word;
     if (L && L.readFacts) {
       var f = L.readFacts()[w];
       if (f && typeof f === "object" && f.locked) return null; /* a locked meaning always wins */
     }
-    /* v59: a sentence that uses the word decides, unless the question has its own wording cue */
-    if (p.cue === "usage") { var ua = usageAnswer(w, p.line, []); if (ua) return ua; }
-    else if ((p.cue === "bare" || p.cue === "") && (ul = usageLine(text, w))) {
-      var ub = usageAnswer(w, ul, p.extra || []);
+    /* v59: a sentence that uses the word decides, unless the question has its own wording cue.
+       v65: bare "what does X mean" still uses the prior sentence when it has one; otherwise verb-first. */
+    if (p.cue === "usage" && p.line) { var ua = usageAnswer(w, p.line, p.extra || [], p.verbFirst); if (ua) return ua; }
+    else if ((p.cue === "bare" || p.cue === "" || p.cue === "verb" || (p.verbFirst && !p.line)) && (ul = usageLine(text, w))) {
+      var ub = usageAnswer(w, ul, p.extra || [], p.verbFirst);
       if (ub) return ub;
     }
+    if (p.verbFirst && !p.line) { var uv = usageAnswer(w, "", [], true); if (uv) return uv; }
     var taught = read()[w];
     var hasTaught = Array.isArray(taught) && taught.length;
     if (!hasTaught && !(p.cue === "mass")) return null; /* dictionary only: v56 flow */
@@ -384,37 +481,179 @@
     return out;
   }
 
-  /* The line after "which one?": 1/2/first/second or words from one meaning. Never teaches. */
+  /* The line after "which one?": a number, "both", "all", "1 and 2", "1,2", or gloss text.
+     v65: every chosen sense is saved; never falls through to "i do not know". */
   function answerChoice(text) {
-    var c, q = clean(text).replace(/[.!?]+$/, ""), k = -1, a, b, wq;
+    var c, q = clean(text).replace(/[.!?]+$/, ""), picks, L, hits, best, wq;
     try { c = JSON.parse(localStorage.getItem(CHOOSE) || "null"); } catch (e) { c = null; }
     if (!c || !c.options) return null;
     if (Date.now() - (c.at || 0) > TTL) { localStorage.removeItem(CHOOSE); return null; }
-    var NUMW = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
-    var ORDW = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth", "eleventh", "twelfth"];
-    var nq = q.replace(/^(?:the |number )/, "").replace(/ one$/, "");
-    if (/^\d{1,2}$/.test(nq)) k = parseInt(nq, 10) - 1;
-    else if (NUMW.indexOf(nq) >= 0) k = NUMW.indexOf(nq);
-    else if (ORDW.indexOf(nq) >= 0) k = ORDW.indexOf(nq);
-    if (k >= c.options.length) k = -1;
-    if (k >= 0) { /* picked by number */ }
-    else if (/^(skip|never mind|nevermind|cancel|neither|forget it)$/.test(q)) { localStorage.removeItem(CHOOSE); return "ok."; }
-    else {
-      wq = expandSet(words(q));
-      var hits = c.options.map(function (o) { return words(o.gloss).filter(function (x) { return wq[x]; }).length; });
-      var best = Math.max.apply(null, hits);
-      if (best > 0 && hits.filter(function (h) { return h === best; }).length === 1) k = hits.indexOf(best);
+    if (/^(skip|never mind|nevermind|cancel|neither|forget it)$/.test(q)) { localStorage.removeItem(CHOOSE); return "ok."; }
+    var which = c.which || "one";
+    if (isMore(q)) {
+      if ((c.shown || 0) < c.options.length) {
+        c.shown = c.options.length; c.at = Date.now();
+        try { localStorage.setItem(CHOOSE, JSON.stringify(c)); } catch (e2) {}
+        return "which " + which + "? " + listOpts(c.options, 0, c.options.length);
+      }
+      return "those are the only meanings i have. " + "which " + which + "? say a number or both.";
     }
-    localStorage.removeItem(CHOOSE);
-    if (k < 0) return null;
-    return say(c.word, c.options[k]);
+    picks = parsePicks(q, c.options.length);
+    if (!picks) {
+      wq = expandSet(words(q));
+      hits = c.options.map(function (o) { return words(o.gloss).filter(function (x) { return wq[x]; }).length; });
+      best = Math.max.apply(null, hits.concat([0]));
+      if (best > 0) {
+        picks = [];
+        hits.forEach(function (h, i) { if (h === best) picks.push(i); });
+      }
+    }
+    if (picks && picks.length) {
+      localStorage.removeItem(CHOOSE);
+      return saveChosen(c.word, c.options, picks, c.compound);
+    }
+    try { L = global.NovaLookup; if (L && L.isNewQuestion && L.isNewQuestion(text)) { localStorage.removeItem(CHOOSE); return null; } } catch (e3) {}
+    return "which " + which + "? say a number, both, or more.";
+  }
+
+
+  /* v65: modifier bag = its glosses, examples, synonyms, plus related-word groups
+     (hospital also brings treatment / payment / money). Head-sense bags are not expanded
+     through those groups, so a law-sense of "bill" does not inherit hospital money words. */
+  var REL = [
+    "talk speak say tell utter voice conversation word words speech",
+    "sound noise loud cry call growl bark howl roar yelp woof",
+    "dog dogs puppy hound canis wolf canine animal animals pet cat",
+    "tree trees wood woody trunk branch plant plants stem stems root roots",
+    "water river stream lake sea ocean",
+    "money cash bank pay paid payment charge fee invoice account owe owed owing",
+    "boat ship sail sea",
+    "hospital clinic doctor medical patient treatment treat care health sick injured nurse medicine surgery surgical insurance payment pay paid money charge fee invoice account owe owed service services",
+    "phone telephone mobile cell utility electric electricity gas water rent tuition payment pay paid money charge fee invoice account owe owed service services"
+  ].map(function (g) { return g.split(" "); });
+  function relExpand(set) {
+    REL.forEach(function (g) {
+      var i, hit = false;
+      for (i = 0; i < g.length; i++) if (set[g[i]] || set[g[i].replace(/s$/, "")] || set[g[i] + "s"]) { hit = true; break; }
+      if (hit) g.forEach(function (x) { set[x] = 1; if (x.length > 3 && /s$/.test(x)) set[x.slice(0, -1)] = 1; });
+    });
+    return set;
+  }
+  function hasNounSense(e) {
+    var i;
+    if (!e || !e.senses) return false;
+    for (i = 0; i < e.senses.length; i++) if (e.senses[i][0] === "n") return true;
+    return false;
+  }
+  function wordBag(term, expandRel, nounOnly) {
+    var e = dictEntry(term), set = {}, i, s, t;
+    words(term).forEach(function (x) { set[x] = 1; });
+    if (e) for (i = 0; i < e.senses.length; i++) {
+      s = e.senses[i];
+      if (nounOnly && s[0] !== "n") continue;
+      t = [s[1]].concat(Array.isArray(s[2]) ? s[2] : [], Array.isArray(s[3]) ? s[3] : []).join(" ");
+      words(t).forEach(function (x) { set[x] = 1; });
+    }
+    return expandRel ? relExpand(set) : set;
+  }
+  function firstGloss(e, nounOnly) {
+    var i, s;
+    if (!e || !e.senses || !e.senses.length) return "";
+    for (i = 0; i < e.senses.length; i++) {
+      s = e.senses[i];
+      if (!nounOnly || s[0] === "n") return String(s[1]).replace(/[.\s]+$/, "");
+    }
+    return String(e.senses[0][1]).replace(/[.\s]+$/, "");
+  }
+  /* "an" before a vowel sound: an oak, an hour; "a" before a consonant sound: a utility, a university. */
+  function article(word) {
+    var w = String(word || "").toLowerCase().replace(/^[^a-z]+/, "").split(/[^a-z'-]+/)[0] || "";
+    if (/^(hour|honest|honor|honour|heir|herb|herbal)s?$/.test(w) || /^(hour|honest|honor|honour|heir|herb|herbal)-/.test(w)) return "an";
+    if (/^(one|once|ones)\b/.test(w) || /^eu/.test(w)) return "a";
+    if (/^u/.test(w)) {
+      if (/^uni|^unique|^use|^usu|^uto|^ura|^uri|^uke|^uvu|^ubiqu/.test(w)) return "a";
+      if (/^u(?:n(?!i)|m|p|g)/.test(w) || /^u[aeiou]/.test(w)) return "an";
+      return "a";
+    }
+    if (/^[aeiou]/.test(w)) return "an";
+    return "a";
+  }
+  function senseBag(s) {
+    var set = {}, t = [s[1] || s.gloss || ""].concat(Array.isArray(s[2]) ? s[2] : (s.ex || []), Array.isArray(s[3]) ? s[3] : (s.syn || [])).join(" ");
+    words(t).forEach(function (x) { set[x] = 1; });
+    return set;
+  }
+  function scoreHead(modBag, s) {
+    var bag = senseBag(s), n = 0, k;
+    for (k in bag) if (modBag[k]) n++;
+    return { overlap: n, sc: n + ((s.pos || s[0]) === "n" ? 0.2 : 0) };
+  }
+  function pickCompound(mod, head) {
+    var e = dictEntry(head), me = dictEntry(mod), list, scored, bag, best, nouns, clear;
+    if (!e || !e.senses.length || !me) return null;
+    nouns = hasNounSense(me);
+    bag = wordBag(mod, true, nouns);
+    list = e.senses.map(function (s, i) { return { pos: s[0], gloss: String(s[1]).replace(/[.\s]+$/, ""), ex: s[2] || [], syn: s[3] || [], idx: i, word: e.word, source: "dict" }; });
+    scored = list.map(function (s) { var sc = scoreHead(bag, s); return { s: s, sc: sc.sc, overlap: sc.overlap }; }).sort(function (a, b) { return b.sc - a.sc || a.s.idx - b.s.idx; });
+    best = scored[0];
+    if (!best) return null;
+    clear = best.overlap >= 1 && (scored.length < 2 || best.overlap > scored[1].overlap);
+    if (scored.length === 1) clear = true;
+    return { head: best.s, modGloss: firstGloss(me, nouns), score: best.sc, overlap: best.overlap, ranked: scored, clear: clear };
+  }
+  function writeCompound(o) { try { localStorage.setItem(COMPOUND, JSON.stringify(o)); } catch (e) {} }
+  function readCompound() {
+    var o;
+    try { o = JSON.parse(localStorage.getItem(COMPOUND) || "null"); } catch (e) { o = null; }
+    if (!o || !o.phrase || Date.now() - (o.at || 0) > TTL) { try { localStorage.removeItem(COMPOUND); } catch (e2) {} return null; }
+    return o;
+  }
+  function clearCompound() { try { localStorage.removeItem(COMPOUND); } catch (e) {} }
+  function compoundAnswer(p) {
+    var L = global.NovaLookup, phrase = p.phrase, taught, pick, art, reply;
+    try { if (L && L.readFacts) { var f = L.readFacts()[phrase]; if (f && ((typeof f === "object" && (f.locked || f.user)) || typeof f === "string")) return null; } } catch (e0) {}
+    if (read()[phrase] && read()[phrase].length) return say(phrase, { source: "taught", gloss: read()[phrase][0].gloss });
+    if (dictEntry(phrase)) return null;
+    if (!dictEntry(p.mod) || !dictEntry(p.head)) return null;
+    pick = pickCompound(p.mod, p.head);
+    if (!pick) return null;
+    try { if (D() && D().clearOffer) D().clearOffer(); } catch (e1) {}
+    try { localStorage.removeItem(CHOOSE); } catch (e2) {}
+    if (!pick.clear) {
+      return askAll(phrase, pick.ranked.map(function (x) { return x.s; }), SHOW, { which: p.head, compound: true });
+    }
+    art = article(phrase);
+    writeCompound({ phrase: phrase, mod: p.mod, head: p.head, gloss: pick.head.gloss, modGloss: pick.modGloss, at: Date.now() });
+    return art + " " + phrase + " is probably " + pick.head.gloss + " for " + article(p.mod) + " " + p.mod + " (" + pick.modGloss + "). right?";
+  }
+  function answerCompound(text) {
+    var o = readCompound(), q, L;
+    if (!o) return null;
+    q = clean(text).replace(/[.!?]+$/, "");
+    L = global.NovaLookup;
+    if (/^(yes|y|yeah|yep|yup|yea|sure|ok|okay|yes please|right|that's right|thats right|correct)$/.test(q) || (L && L.taughtYesNo && L.taughtYesNo(q) === "yes")) {
+      clearCompound();
+      try { if (L && L.saveUser && L.saveUser(o.phrase, o.gloss, o.gloss)) return "saved. " + o.phrase + " means " + o.gloss + "."; } catch (e) {}
+      addTaught(o.phrase, o.gloss, o.gloss);
+      return "saved. " + o.phrase + " means " + o.gloss + ".";
+    }
+    if (/^(skip|nevermind|never mind|cancel|forget it|not now)$/.test(q)) { clearCompound(); return "ok. skipped."; }
+    if (/^(no|n|nope|nah|wrong|not quite|no thanks)$/.test(q) || (L && L.taughtYesNo && L.taughtYesNo(q) === "no")) {
+      clearCompound();
+      try { if (L && L.setPending) L.setPending({ question: "what is a " + o.phrase, term: o.phrase }); } catch (e2) {}
+      return "ok. tell me what " + article(o.phrase) + " " + o.phrase + " means if you like.";
+    }
+    try { if (L && L.isNewQuestion && L.isNewQuestion(text)) { clearCompound(); return null; } } catch (e3) {}
+    return article(o.phrase) + " " + o.phrase + " is probably " + o.gloss + " for " + article(o.mod) + " " + o.mod + " (" + o.modGloss + "). right?";
   }
 
   function wrapReply() {
     if (typeof reply !== "function" || reply._senses) return;
     var orig = reply, p;
     function wrapped(text) {
-      var a = answerChoice(text);
+      var a = answerCompound(text);
+      if (a) return a;
+      a = answerChoice(text);
       if (a) return a;
       return orig.apply(this, arguments);
     }
@@ -429,7 +668,7 @@
     if (!T || typeof T.learnPair !== "function" || T.learnPair._senses) return;
     var orig = T.learnPair, p;
     var g = function (user, nova) {
-      if (/^which one\? 1\) /.test(String(nova || "").toLowerCase())) return false;
+      if (/^(which (?:one|[a-z'-]+)\? |an? .+ is probably |saved\. )/.test(String(nova || "").toLowerCase())) return false;
       return orig.apply(this, arguments);
     };
     for (p in orig) if (Object.prototype.hasOwnProperty.call(orig, p)) g[p] = orig[p];
@@ -437,8 +676,8 @@
     T.learnPair = g;
   }
 
-  global.NovaSenses = { read: read, addTaught: addTaught, editTaught: editTaught, allSenses: allSenses, parse: parse,
-    answer: answer, answerChoice: answerChoice, migrate: migrate, cueOf: cueOf, frame: frame, usageScores: usageScores, KEY: KEY };
+  global.NovaSenses = { read: read, addTaught: addTaught, editTaught: editTaught, allSenses: allSenses, parse: parse, parseVerb: parseVerb,
+    answer: answer, answerChoice: answerChoice, answerCompound: answerCompound, compoundAnswer: compoundAnswer, migrate: migrate, cueOf: cueOf, frame: frame, usageScores: usageScores, KEY: KEY, COMPOUND: COMPOUND, SHOW: SHOW };
   migrate();
   wrapReply();
   guardLearn();

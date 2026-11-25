@@ -10,7 +10,7 @@
   var NOSAVE = "nova-dict-nosave-v1";
   var BASE = "dict/";
   var DICT_CACHE = "nova-dict-wn30-v2"; /* must match sw.js */
-  var TTL = 10 * 60 * 1000;
+  var TTL = 10 * 60 * 1000, SHOW = 3; /* v65: list at most 3 senses, then more? */
   var POS = { n: "noun", v: "verb", a: "adjective", r: "adverb" };
   var shards = {};
   var failedAt = {};
@@ -226,8 +226,8 @@
     else if (pickIdx != null && e.senses[pickIdx]) p = { pick: pickIdx };
     else p = pickSense(e, term);
     if (!lead && p.top) {
-      writeOffer({ term: clean(term), entry: e, i: p.top[0], choose: p.top, at: Date.now() });
-      return "dictionary says " + e.word + " can mean: " + listSenses(e, p.top) + ". which one?";
+      writeOffer({ term: clean(term), entry: e, i: p.top[0], choose: p.top, shown: Math.min(SHOW, p.top.length), at: Date.now() });
+      return formatChoose(e, p.top, Math.min(SHOW, p.top.length));
     }
     i = p.pick != null ? p.pick : 0;
     var line = (lead || "") + "dictionary says: " + sense(e, i) + ".";
@@ -253,7 +253,49 @@
     if (k < 0 || k >= (max || 2)) return -1;
     return k;
   }
-  function isMore(q) { return /^(what else|other meaning|another meaning|next meaning|any other meaning|what else does it mean)$/.test(q); }
+  function isMore(q) { return /^(more|more\?|what else|other meaning|another meaning|next meaning|any other meaning|what else does it mean)$/.test(q); }
+
+  /* v65: "both", "all", "1 and 2", "1,2", a single number. returns 0-based indexes, or null. */
+  function parsePicks(q, max) {
+    var s = String(q || "").replace(/[.!?]+$/g, "").trim(), parts, out = [], i, k, seen = {};
+    if (/^(both|both of (?:them|those)|the first two)$/.test(s)) return max >= 2 ? [0, 1] : [0];
+    if (/^(all|all of them|every one|every meaning|all of them please)$/.test(s)) {
+      for (i = 0; i < max; i++) out.push(i);
+      return out;
+    }
+    s = s.replace(/^(?:the |number )/, "");
+    if (/^\d+(?:\s*(?:,|&|and)\s*\d+)+$/.test(s) || /^\d+(?:\s*,\s*\d+)+$/.test(s) || /^\d+(?:\s+\d+)+$/.test(s)) {
+      parts = s.split(/\s*(?:,|&|and)\s*|\s+/);
+      for (i = 0; i < parts.length; i++) {
+        k = parseInt(parts[i], 10) - 1;
+        if (k < 0 || k >= max || seen[k]) continue;
+        seen[k] = 1; out.push(k);
+      }
+      return out.length ? out : null;
+    }
+    k = isPick(s, max);
+    return k >= 0 ? [k] : null;
+  }
+  function formatChoose(e, idx, shown) {
+    var n = idx.length, use = Math.min(shown == null ? SHOW : shown, n), body = listSenses(e, idx.slice(0, use));
+    if (use < n) return "dictionary says " + e.word + " can mean: " + body + ". more?";
+    return "dictionary says " + e.word + " can mean: " + body + ". which one?";
+  }
+  function savePicked(o, indexes) {
+    var L = global.NovaLookup, i, ix, s, ok = 0, glosses = [];
+    if (!L || typeof L.saveUser !== "function") return "i could not save that.";
+    for (i = 0; i < indexes.length; i++) {
+      ix = indexes[i];
+      s = o.entry.senses[Array.isArray(o.choose) ? o.choose[ix] : ix];
+      if (!s) continue;
+      if (L.saveUser(o.term, s[1], s[1])) ok++;
+      if (o.entry.word !== o.term) L.saveUser(o.entry.word, s[1], s[1]);
+      glosses.push(gloss(s[1]));
+    }
+    if (!ok) return "i could not save that.";
+    if (glosses.length === 1) return "saved. " + o.term + " means " + glosses[0] + ".";
+    return "saved. " + o.term + " can mean: " + glosses.map(function (g, k) { return (k + 1) + ") " + g; }).join(" ") + ".";
+  }
 
   function saveMeaning(o) {
     var L = global.NovaLookup, s = o.entry.senses[o.i] || o.entry.senses[0], ok = false;
@@ -268,28 +310,40 @@
     var o = readOffer();
     if (!o) return null;
     var q = clean(text).replace(/[.!?]+$/, ""), k, n;
-    if (o.choose) { /* v56: "which one?" is open */
-      k = isPick(q, o.choose.length);
-      if (k >= 0) {
-        o.i = o.choose[k];
-        o.seen = [o.i];
-        delete o.choose;
-        o.at = Date.now();
-        if (!saving()) { clearOffer(); return "dictionary says: " + sense(o.entry, o.i) + ". learning is stopped, so i will not save it."; }
-        writeOffer(o);
-        return "dictionary says: " + sense(o.entry, o.i) + ". want me to remember it?";
+    if (o.choose) { /* v56/v65: "which one?" is open */
+      var picks = parsePicks(q, o.choose.length), Lq = global.NovaLookup, glossHit, gh, best, hits;
+      if (picks && picks.length) {
+        if (!saving()) { clearOffer(); return "dictionary says: " + sense(o.entry, o.choose[picks[0]]) + ". learning is stopped, so i will not save it."; }
+        var msg = savePicked(o, picks);
+        clearOffer();
+        return msg;
       }
       if (isNo(q)) { clearOffer(); return "ok. not saved."; }
       if (isYes(q)) return "which one? " + sayNumber(o.choose.length);
       if (isMore(q)) {
-        o.seen = o.choose.slice(); delete o.choose;
-        for (n = 0; n < o.entry.senses.length; n++) if (o.seen.indexOf(n) === -1) break;
-        if (n >= o.entry.senses.length) { o.at = Date.now(); o.choose = o.seen; writeOffer(o); return "those are the only meanings i have from the dictionary. " + sayNumber(o.choose.length); }
-        o.i = n; o.seen.push(n); o.at = Date.now(); writeOffer(o);
-        return "dictionary also says: " + sense(o.entry, o.i) + ". want me to remember it?";
+        if ((o.shown || 0) < o.choose.length) {
+          o.shown = o.choose.length; o.at = Date.now(); writeOffer(o);
+          return "dictionary says " + o.entry.word + " can mean: " + listSenses(o.entry, o.choose) + ". which one?";
+        }
+        return "those are the only meanings i have from the dictionary. " + sayNumber(o.choose.length);
       }
-      clearOffer();
-      return null;
+      /* gloss text: words from one or more meanings */
+      hits = o.choose.map(function (ix) { return contentWords(o.entry.senses[ix][1]); });
+      var qset = {}; contentWords(q).forEach(function (w) { qset[w] = 1; });
+      var scores = hits.map(function (ws) { return ws.filter(function (w) { return qset[w]; }).length; });
+      best = Math.max.apply(null, scores.concat([0]));
+      if (best > 0) {
+        picks = [];
+        scores.forEach(function (sc, i) { if (sc === best) picks.push(i); });
+        if (!saving()) { clearOffer(); return "dictionary says: " + sense(o.entry, o.choose[picks[0]]) + ". learning is stopped, so i will not save it."; }
+        msg = savePicked(o, picks);
+        clearOffer();
+        return msg;
+      }
+      /* v65: never fall through to i do not know while which-one is open, unless this is a new question. */
+      try { if (Lq && Lq.isNewQuestion && Lq.isNewQuestion(text)) { clearOffer(); return null; } } catch (e4) {}
+      try { if (Lq && Lq.cancelPending && Lq.cancelPending(text)) { clearOffer(); return "ok. not saved."; } } catch (e5) {}
+      return "which one? say a number, both, or more.";
     }
     if (isYes(q)) {
       clearOffer();
@@ -399,7 +453,7 @@
     if (!T || typeof T.learnPair !== "function" || T.learnPair._dict) return;
     var orig = T.learnPair;
     var g = function (user, nova) {
-      if (/^(dictionary says|dictionary also says|dictionary says [a-z' -]+ can mean|which one\? say|those are the only meanings|you have said .* dictionary says|ok\. not saved|that is the only meaning|downloading the dictionary|learning is stopped, so i)/.test(String(nova || "").toLowerCase())) return false;
+      if (/^(dictionary says|dictionary also says|dictionary says [a-z' -]+ can mean|which one\? say|which one\? 1\)|those are the only meanings|you have said .* dictionary says|ok\. not saved|that is the only meaning|downloading the dictionary|learning is stopped, so i|saved\. )/.test(String(nova || "").toLowerCase())) return false;
       return orig.apply(this, arguments);
     };
     g._dict = true;

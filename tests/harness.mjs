@@ -27,9 +27,12 @@ function makeEl() {
 
 export function boot(opts = {}) {
   let files = opts.files || ["train.js", "lookup.js", "app.js", "word-math.js", "math-boot.js", "new-words.js"];
-  /* v63: NOVA_LIVE_RULES=1 (scripts/test-live-order.sh) re-runs every suite with rules.js loaded the way
-     index.html loads it: after every other script, wrapping reply last. */
-  if (process.env.NOVA_LIVE_RULES === "1" && files.includes("app.js") && !files.includes("rules.js")) files = files.concat(["rules.js"]);
+  /* v63/v64: NOVA_LIVE_RULES=1 (scripts/test-live-order.sh) re-runs every suite with rules.js then
+     self.js loaded the way index.html loads them: after every other script, self.js wrapping reply last. */
+  if (process.env.NOVA_LIVE_RULES === "1" && files.includes("app.js")) {
+    if (!files.includes("rules.js")) files = files.concat(["rules.js"]);
+    if (!files.includes("self.js")) files = files.concat(["self.js"]);
+  }
   const mem = new Map(Object.entries(opts.seed || {}));
   const localStorage = {
     getItem: (k) => (mem.has(k) ? mem.get(k) : null),

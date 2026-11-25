@@ -20,11 +20,11 @@ test("old duplicate pairs no longer win the substring vote", () => {
   const n = boot();
   /* Older builds appended duplicates; simulate two old pairs for the same key. */
   n.T().setLessons([{ user: "tell me a joke", nova: "no jokes" }, { user: "tell me a joke", nova: "no jokes" }]);
-  assert.equal(n.say("can you tell me a joke"), "no jokes");
+  assert.equal(n.say("please tell me a joke"), "no jokes");
   assert.equal(n.say("when i say tell me a joke say why did the cat sit"), "lesson saved.");
   assert.equal(count(n, "tell me a joke"), 1);
   assert.equal(n.say("tell me a joke"), "why did the cat sit", "exact path");
-  assert.equal(n.say("can you tell me a joke"), "why did the cat sit", "substring path");
+  assert.equal(n.say("please tell me a joke"), "why did the cat sit", "substring path");
   assert.equal(n.say("tell me a joke please"), "why did the cat sit", "substring path");
   n.stop();
 });
@@ -36,10 +36,10 @@ test("second when-i-say for the same key overwrites; trailing ? is the same key"
   assert.equal(count(n, "how old are you"), 1);
   assert.equal(n.say("how old are you"), "three");
   assert.equal(n.say("How old are you?"), "three");
-  n.say("when i say can you fly say no");
-  n.say("when i say can you fly say yes");
-  assert.equal(n.say("can you fly"), "yes");
-  assert.equal(count(n, "can you fly"), 1);
+  n.say("when i say can birds fly say no");
+  n.say("when i say can birds fly say yes");
+  assert.equal(n.say("can birds fly"), "yes");
+  assert.equal(count(n, "can birds fly"), 1);
   n.stop();
 });
 

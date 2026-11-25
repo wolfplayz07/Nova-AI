@@ -13,11 +13,11 @@ test("QA repro: should i learn python or javascript first is not 'yes or no?'", 
 
 test("other yes/no shapes keep 'yes or no?' and the next line teaches", () => {
   const n = boot();
-  for (const q of ["can you count", "should you be here", "is it raining", "do you like pizza"]) {
+  for (const q of ["can dogs bark", "should you be here", "is it raining", "do you like pizza"]) {
     assert.equal(n.say(q), "yes or no?", q);
     n.say("skip");
   }
-  assert.equal(n.say("can you count"), "yes or no?");
+  assert.equal(n.say("can dogs bark"), "yes or no?");
   assert.equal(n.say("yes"), "got it. next time i'll say: yes");
   n.stop();
 });

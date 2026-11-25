@@ -41,25 +41,26 @@ test("tree talk picks the tree sense", () => {
 });
 
 test("context that does not decide: list every sense (v59: not just two), pick with 1/2/first/second, what else still works", () => {
-  for (const [pick, want] of [["1", /\(noun\): tough/], ["first", /\(noun\): tough/], ["2", /\(verb\): speak/], ["second", /\(verb\): speak/]]) {
+  for (const [pick, want] of [["1", /tough protective covering/], ["first", /tough protective covering/], ["2", /speak in an unfriendly tone/], ["second", /speak in an unfriendly tone/]]) {
     const n = start();
     n.say("hello there");
     n.say("i like pizza a lot");
     const r = n.say("what is a bark");
-    assert.match(r, /^dictionary says bark can mean: 1\) \(noun\) tough protective covering .* 2\) \(verb\) speak in an unfriendly tone 3\) .* 9\) \(verb\) tan \(a skin\) with bark tannins\. which one\?$/);
+    assert.match(r, /^dictionary says bark can mean: 1\) \(noun\) tough protective covering .* 2\) \(verb\) speak in an unfriendly tone 3\) .*\. more\?$/);
     const got = n.say(pick);
     assert.match(got, want);
-    assert.match(got, /want me to remember it\?$/);
-    assert.match(n.say("yes"), /^saved\. bark means /);
+    assert.match(got, /^saved\. bark means /);
     n.stop();
   }
   const n = start();
   n.say("i like pizza a lot");
   n.say("what is a bark");
-  assert.equal(n.say("what else"), "those are the only meanings i have from the dictionary. say a number from 1 to 9.");
+  const rest = n.say("more");
+  assert.match(rest, /4\) /);
+  assert.match(rest, /which one\?$/);
   assert.equal(n.say("yes"), "which one? say a number from 1 to 9.");
-  assert.match(n.say("2"), /speak in an unfriendly tone/);
-  assert.equal(n.say("what else"), "dictionary also says: bark (noun): tough protective covering of the woody stems and roots of trees and other woody plants. want me to remember it?");
+  assert.match(n.say("2"), /^saved\. bark means .*speak in an unfriendly tone/);
+  assert.equal(n.say("what else"), "i do not know.");
   n.stop();
 });
 
